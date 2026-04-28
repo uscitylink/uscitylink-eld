@@ -947,7 +947,7 @@ def get_samsara_gps():
     if not token:
         return {"error": "SAMSARA_API_TOKEN not set"}
 
-    url = "https://api.samsara.com/fleet/vehicles/stats"
+    url = "https://api.samsara.com/v1/fleet/vehicles/stats"
 
     headers = {
         "Authorization": f"Bearer {token}",
@@ -968,8 +968,11 @@ def get_samsara_gps():
                 "response": res.text[:500]
             }
 
-        data = res.json()
-        trucks = []
+        if not res.text:
+    return {"error": "Empty response from Samsara"}
+
+    data = res.json()
+    trucks = []
 
         for vehicle in data.get("data", []):
             gps = vehicle.get("gps")
