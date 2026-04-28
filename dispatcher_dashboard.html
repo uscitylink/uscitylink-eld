@@ -281,7 +281,7 @@ function initMap() {
 
 async function loadFleetMap() {
     try {
-        const response = await fetch(`${API}/api/fleet/locations`);
+        const response = await fetch(`${API}/api/samsara/gps`);
         const trucks = await response.json();
 
         let validCount = 0;
@@ -295,12 +295,10 @@ async function loadFleetMap() {
             validCount++;
 
             const popup = `
-                <b>Truck:</b> ${t.vehicle_id}<br>
-                <b>Driver:</b> ${t.driver_id || "Unassigned"}<br>
-                <b>Status:</b> ${t.status}<br>
+                <b>Samsara Truck:</b> ${t.vehicle_id}<br>
                 <b>Speed:</b> ${t.speed || 0} mph<br>
-                <b>Origin:</b> ${t.origin || ""}<br>
-                <b>Time:</b> ${t.event_time}
+                <b>GPS:</b> ${lat}, ${lon}<br>
+                <b>Time:</b> ${t.time || ""}
             `;
 
             if (truckMarkers[t.vehicle_id]) {
@@ -313,11 +311,11 @@ async function loadFleetMap() {
         });
 
         document.getElementById("map_status").textContent =
-            `Showing ${validCount} truck(s) with valid GPS location.`;
+            `Showing ${validCount} Samsara truck(s) live on map.`;
 
     } catch (error) {
-        console.log("Fleet map error", error);
-        document.getElementById("map_status").textContent = "Fleet map error.";
+        console.log("Samsara map error", error);
+        document.getElementById("map_status").textContent = "Samsara map error.";
     }
 }
 
