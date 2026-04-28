@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>US Citylink Admin Management</title>
+
+<style>
+body {
+    background: #020617;
+    color: white;
+    font-family: Arial;
+    padding: 25px;
+}
+
+.card {
+    background: #1e293b;
+    padding: 25px;
+    border-radius: 12px;
+    max-width: 1000px;
+}
+
+h1 {
+    color: #38bdf8;
+}
+
+input, select {
+    padding: 10px;
+    width: 260px;
+    margin-bottom: 12px;
+    border-radius: 6px;
+    border: none;
+}
+
+button {
+    padding: 12px 18px;
+    margin: 6px;
+    border: none;
+    border-radius: 8px;
+    color: white;
+    font-size: 15px;
+    cursor: pointer;
+}
+
+.btn-main { background: #2563eb; }
+.btn-green { background: #16a34a; }
+.btn-logout { background: #dc2626; }
+
+.box {
+    background: #0f172a;
+    padding: 15px;
+    border-radius: 8px;
+    margin-top: 15px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    color: black;
+    margin-top: 15px;
+}
+
+th, td {
+    border: 1px solid #999;
+    padding: 8px;
+    font-size: 13px;
+}
+
+th {
+    background: #e5e7eb;
+}
+
+pre {
+    background: black;
+    color: #22c55e;
+    padding: 15px;
+    border-radius: 8px;
+    white-space: pre-wrap;
+}
+</style>
+</head>
+
+<body>
+
+<div class="card">
+
+<h1>US Citylink Admin Management</h1>
+
+<button class="btn-logout" onclick="doLogout()">LOGOUT</button>
+<p id="user_info"></p>
+
+<h2>Create Driver</h2>
+<div class="box">
+    <p>Driver ID:</p>
+    <input id="driver_id" value="D001">
+
+    <p>Driver Name:</p>
+    <input id="driver_name" value="John Driver">
+
+    <p>License Number:</p>
+    <input id="license_number" value="LIC12345">
+
+    <br>
+    <button class="btn-green" onclick="createDriver()">CREATE DRIVER</button>
+</div>
+
+<h2>Create Vehicle</h2>
+<div class="box">
+    <p>Vehicle ID:</p>
+    <input id="vehicle_id" value="TRK101">
+
+    <p>VIN:</p>
+    <input id="vin" value="1FUJGLDR1DLAB1234">
+
+    <p>Plate:</p>
+    <input id="plate" value="CA12345">
+
+    <br>
+    <button class="btn-green" onclick="createVehicle()">CREATE VEHICLE</button>
+</div>
+
+<h2>Create User Login</h2>
+<div class="box">
+    <p>Username:</p>
+    <input id="username" value="driver1">
+
+    <p>Password:</p>
+    <input id="password" value="driver123">
+
+    <p>Role:</p>
+    <select id="role">
+        <option value="DRIVER">DRIVER</option>
+        <option value="DISPATCHER">DISPATCHER</option>
+        <option value="ADMIN">ADMIN</option>
+    </select>
+
+    <p>Driver ID:</p>
+    <input id="user_driver_id" value="D001">
+
+    <br>
+    <button class="btn-green" onclick="createUser()">CREATE USER LOGIN</button>
+</div>
+
+<h2>Drivers</h2>
+<div class="box">
+    <button class="btn-main" onclick="loadDrivers()">REFRESH DRIVERS</button>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Driver ID</th>
+                <th>Name</th>
+                <th>License</th>
+                <th>Active</th>
+            </tr>
+        </thead>
+        <tbody id="drivers_body"></tbody>
+    </table>
+</div>
+
+<h2>Vehicles</h2>
+<div class="box">
+    <button class="btn-main" onclick="loadVehicles()">REFRESH VEHICLES</button>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Vehicle ID</th>
+                <th>VIN</th>
+                <th>Plate</th>
+                <th>Active</th>
+            </tr>
+        </thead>
+        <tbody id="vehicles_body"></tbody>
+    </table>
+</div>
+
+<h2>Users</h2>
+<div class="box">
+    <button class="btn-main" onclick="loadUsers()">REFRESH USERS</button>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Username</th>
+                <th>Role</th>
+                <th>Driver ID</th>
+                <th>Active</th>
+            </tr>
+        </thead>
+        <tbody id="users_body"></tbody>
+    </table>
+</div>
+
+<h2>Result</h2>
+<pre id="result"></pre>
+
+</div>
+
+<script>
+const API = window.location.origin;
+
+if (!localStorage.getItem("eld_role")) {
+    window.location.href = "/app/login.html";
+}
+
+if (localStorage.getItem("eld_role") !== "ADMIN") {
+    alert("Admin access only");
+    window.location.href = "/app/login.html";
+}
+
+function doLogout() {
+    localStorage.clear();
+    window.location.href = "/app/login.html";
+}
+
+function showUserInfo() {
+    document.getElementById("user_info").textContent =
+        "Logged in as: " + localStorage.getItem("eld_username") +
+        " (" + localStorage.getItem("eld_role") + ")";
+}
+
+async function createDriver() {
+    const driverId = document.getElementById("driver_id").value;
+    const name = document.getElementById("driver_name").value;
+    const license = document.getElementById("license_number").value;
+
+    const url = `${API}/api/admin/driver?driver_id=${driverId}&name=${encodeURIComponent(name)}&license_number=${license}`;
+
+    const response = await fetch(url, { method: "POST" });
+    const data = await response.json();
+
+    document.getElementById("result").textContent = JSON.stringify(data, null, 2);
+    loadDrivers();
+}
+
+async function createVehicle() {
+    const vehicleId = document.getElementById("vehicle_id").value;
+    const vin = document.getElementById("vin").value;
+    const plate = document.getElementById("plate").value;
+
+    const url = `${API}/api/admin/vehicle?vehicle_id=${vehicleId}&vin=${vin}&plate=${plate}`;
+
+    const response = await fetch(url, { method: "POST" });
+    const data = await response.json();
+
+    document.getElementById("result").textContent = JSON.stringify(data, null, 2);
+    loadVehicles();
+}
+
+async function createUser() {
+    const username = document.getElementById("username").value;
+    const password = document.getElementById("password").value;
+    const role = document.getElementById("role").value;
+    const driverId = document.getElementById("user_driver_id").value;
+
+    const url = `${API}/api/auth/create-user?username=${username}&password=${password}&role=${role}&driver_id=${driverId}`;
+
+    const response = await fetch(url, { method: "POST" });
+    const data = await response.json();
+
+    document.getElementById("result").textContent = JSON.stringify(data, null, 2);
+    loadUsers();
+}
+
+async function loadDrivers() {
+    const response = await fetch(`${API}/api/admin/drivers`);
+    const drivers = await response.json();
+
+    const body = document.getElementById("drivers_body");
+    body.innerHTML = "";
+
+    drivers.forEach(d => {
+        body.innerHTML += `
+            <tr>
+                <td>${d.id}</td>
+                <td>${d.driver_id}</td>
+                <td>${d.name}</td>
+                <td>${d.license_number}</td>
+                <td>${d.active}</td>
+            </tr>
+        `;
+    });
+}
+
+async function loadVehicles() {
+    const response = await fetch(`${API}/api/admin/vehicles`);
+    const vehicles = await response.json();
+
+    const body = document.getElementById("vehicles_body");
+    body.innerHTML = "";
+
+    vehicles.forEach(v => {
+        body.innerHTML += `
+            <tr>
+                <td>${v.id}</td>
+                <td>${v.vehicle_id}</td>
+                <td>${v.vin}</td>
+                <td>${v.plate}</td>
+                <td>${v.active}</td>
+            </tr>
+        `;
+    });
+}
+
+async function loadUsers() {
+    const response = await fetch(`${API}/api/auth/users`);
+    const users = await response.json();
+
+    const body = document.getElementById("users_body");
+    body.innerHTML = "";
+
+    users.forEach(u => {
+        body.innerHTML += `
+            <tr>
+                <td>${u.id}</td>
+                <td>${u.username}</td>
+                <td>${u.role}</td>
+                <td>${u.driver_id || ""}</td>
+                <td>${u.active}</td>
+            </tr>
+        `;
+    });
+}
+
+window.onload = function() {
+    showUserInfo();
+    loadDrivers();
+    loadVehicles();
+    loadUsers();
+};
+</script>
+
+</body>
+</html>

@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>US Citylink Dispatcher Dashboard</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+
+<style>
+body { background:#020617; color:white; font-family:Arial; padding:25px; }
+.card { background:#1e293b; padding:25px; border-radius:12px; max-width:1200px; }
+h1 { color:#38bdf8; }
+input, select { padding:10px; width:260px; margin-bottom:12px; border-radius:6px; border:none; }
+button { padding:12px 18px; margin:6px; border:none; border-radius:8px; color:white; font-size:15px; cursor:pointer; }
+button:hover { opacity:0.85; }
+
+.btn-main { background:#f59e0b; }
+.btn-refresh { background:#2563eb; }
+.btn-dot { background:#16a34a; }
+.btn-route { background:#0ea5e9; }
+.btn-logout { background:#dc2626; }
+
+.box { background:#0f172a; padding:15px; border-radius:8px; margin-top:15px; }
+.status-big { font-size:28px; font-weight:bold; color:#22c55e; }
+
+.warning {
+    background:#7f1d1d;
+    padding:14px;
+    border-radius:8px;
+    margin-top:10px;
+    font-size:18px;
+    font-weight:bold;
+    display:none;
+}
+
+#map { height:450px; border-radius:10px; }
+
+table {
+    width:100%;
+    border-collapse:collapse;
+    background:white;
+    color:black;
+    margin-top:15px;
+}
+
+th, td {
+    border:1px solid #999;
+    padding:8px;
+    font-size:13px;
+}
+
+th { background:#e5e7eb; }
+
+pre {
+    background:black;
+    color:#22c55e;
+    padding:15px;
+    border-radius:8px;
+    white-space:pre-wrap;
+}
+
+.badge {
+    padding:4px 8px;
+    border-radius:6px;
+    color:white;
+    font-weight:bold;
+}
+
+.badge-off { background:#dc2626; }
+.badge-sb { background:#9333ea; }
+.badge-driving { background:#16a34a; }
+.badge-on { background:#2563eb; }
+</style>
+</head>
+
+<body>
+
+<div class="card">
+
+<h1>US Citylink Dispatcher Dashboard</h1>
+
+<button class="btn-logout" onclick="doLogout()">LOGOUT</button>
+<p id="user_info"></p>
+
+<p>Driver:</p>
+<select id="driver_id"></select>
+
+<p>Route Vehicle:</p>
+<select id="route_vehicle_id"></select>
+
+<br>
+<button class="btn-refresh" onclick="loadAll()">REFRESH DASHBOARD</button>
+<button class="btn-route" onclick="loadRouteHistory()">SHOW ROUTE HISTORY</button>
+<button class="btn-dot" onclick="inspectionMode()">VIEW DOT FILE</button>
+<button class="btn-main" onclick="downloadFile()">DOWNLOAD ELD FILE</button>
+
+<h2>Current Driver Status</h2>
+<div class="box">
+    <div id="current_status" class="status-big">Loading...</div>
+    <p id="status_details"></p>
+</div>
+
+<h2>Fleet Map + Route History</h2>
+<div class="box">
+    <div id="map"></div>
+    <p id="map_status">Loading fleet map...</p>
+</div>
+
+<h2>HOS Summary</h2>
+<div class="box">
+    <div id="hos"></div>
+    <div id="violation_box" class="warning"></div>
+</div>
+
+<h2>Unassigned Driving</h2>
+<div class="box">
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Time</th>
+<th>Vehicle</th>
+<th>Speed</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody id="unassigned_body"></tbody>
+</table>
+</div>
+
+<h2>Driver Events</h2>
+<div class="box">
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Time</th>
+<th>Status</th>
+<th>Vehicle</th>
+<th>Origin</th>
+<th>Speed</th>
+<th>GPS</th>
+</tr>
+</thead>
+<tbody id="events_body"></tbody>
+</table>
+</div>
+
+<h2>Route History Points</h2>
+<div class="box">
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Time</th>
+<th>Vehicle</th>
+<th>Driver</th>
+<th>Status</th>
+<th>Speed</th>
+<th>GPS</th>
+</tr>
+</thead>
+<tbody id="route_body"></tbody>
+</table>
+</div>
+
+<h2>Edit History</h2>
+<div class="box">
+<table>
+<thead>
+<tr>
+<th>Original ID</th>
+<th>New ID</th>
+<th>Old</th>
+<th>New</th>
+<th>Reason</th>
+<th>Edited At</th>
+</tr>
+</thead>
+<tbody id="edits_body"></tbody>
+</table>
+</div>
+
+<h2>Certification History</h2>
+<div class="box">
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Driver</th>
+<th>Log Date</th>
+<th>Certified At</th>
+<th>Note</th>
+</tr>
+</thead>
+<tbody id="certs_body"></tbody>
+</table>
+</div>
+
+<h2>DOT Output</h2>
+<pre id="dot_output">Click VIEW DOT FILE</pre>
+
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script>
+const API = window.location.origin;
+
+if (!localStorage.getItem("eld_role")) {
+    window.location.href = "/app/login.html";
+}
+
+if (!["ADMIN", "DISPATCHER"].includes(localStorage.getItem("eld_role"))) {
+    alert("Access denied");
+    window.location.href = "/app/login.html";
+}
+
+let map;
+let truckMarkers = {};
+let routeLine = null;
+let routeMarkers = [];
+
+function doLogout() {
+    localStorage.clear();
+    window.location.href = "/app/login.html";
+}
+
+function showUserInfo() {
+    document.getElementById("user_info").textContent =
+        "Logged in as: " + localStorage.getItem("eld_username") +
+        " (" + localStorage.getItem("eld_role") + ")";
+}
+
+function driver() {
+    return document.getElementById("driver_id").value;
+}
+
+function routeVehicle() {
+    return document.getElementById("route_vehicle_id").value;
+}
+
+function statusBadge(status) {
+    if (status === "OFF") return `<span class="badge badge-off">OFF</span>`;
+    if (status === "SB") return `<span class="badge badge-sb">SB</span>`;
+    if (status === "DRIVING") return `<span class="badge badge-driving">DRIVING</span>`;
+    if (status === "ON") return `<span class="badge badge-on">ON</span>`;
+    return `<span class="badge">${status}</span>`;
+}
+
+async function loadDriverDropdown() {
+    const res = await fetch(`${API}/api/admin/drivers`);
+    const data = await res.json();
+
+    const select = document.getElementById("driver_id");
+    select.innerHTML = "";
+
+    data.forEach(d => {
+        select.innerHTML += `<option value="${d.driver_id}">${d.name} (${d.driver_id})</option>`;
+    });
+}
+
+async function loadVehicleDropdown() {
+    const res = await fetch(`${API}/api/admin/vehicles`);
+    const data = await res.json();
+
+    const select = document.getElementById("route_vehicle_id");
+    select.innerHTML = "";
+
+    data.forEach(v => {
+        select.innerHTML += `<option value="${v.vehicle_id}">${v.vehicle_id} - ${v.plate || ""}</option>`;
+    });
+}
+
+function initMap() {
+    map = L.map("map").setView([35.3733, -119.0187], 8);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19
+    }).addTo(map);
+}
+
+async function loadFleetMap() {
+    try {
+        const response = await fetch(`${API}/api/fleet/locations`);
+        const trucks = await response.json();
+
+        let validCount = 0;
+
+        trucks.forEach(t => {
+            const lat = parseFloat(t.latitude);
+            const lon = parseFloat(t.longitude);
+
+            if (isNaN(lat) || isNaN(lon)) return;
+
+            validCount++;
+
+            const popup = `
+                <b>Truck:</b> ${t.vehicle_id}<br>
+                <b>Driver:</b> ${t.driver_id || "Unassigned"}<br>
+                <b>Status:</b> ${t.status}<br>
+                <b>Speed:</b> ${t.speed || 0} mph<br>
+                <b>Origin:</b> ${t.origin || ""}<br>
+                <b>Time:</b> ${t.event_time}
+            `;
+
+            if (truckMarkers[t.vehicle_id]) {
+                truckMarkers[t.vehicle_id].setLatLng([lat, lon]);
+                truckMarkers[t.vehicle_id].bindPopup(popup);
+            } else {
+                truckMarkers[t.vehicle_id] = L.marker([lat, lon]).addTo(map);
+                truckMarkers[t.vehicle_id].bindPopup(popup);
+            }
+        });
+
+        document.getElementById("map_status").textContent =
+            `Showing ${validCount} truck(s) with valid GPS location.`;
+
+    } catch (error) {
+        console.log("Fleet map error", error);
+        document.getElementById("map_status").textContent = "Fleet map error.";
+    }
+}
+
+function clearRoute() {
+    if (routeLine) {
+        map.removeLayer(routeLine);
+        routeLine = null;
+    }
+
+    routeMarkers.forEach(m => map.removeLayer(m));
+    routeMarkers = [];
+}
+
+async function loadRouteHistory() {
+    try {
+        clearRoute();
+
+        const vehicleId = routeVehicle();
+
+        if (!vehicleId) {
+            alert("Select a vehicle first.");
+            return;
+        }
+
+        const response = await fetch(`${API}/api/fleet/route?vehicle_id=${vehicleId}`);
+        const points = await response.json();
+
+        const body = document.getElementById("route_body");
+        body.innerHTML = "";
+
+        const latLngs = [];
+
+        points.forEach(p => {
+            const lat = parseFloat(p.latitude);
+            const lon = parseFloat(p.longitude);
+
+            body.innerHTML += `
+                <tr>
+                    <td>${p.id}</td>
+                    <td>${new Date(p.event_time).toLocaleString()}</td>
+                    <td>${p.vehicle_id}</td>
+                    <td>${p.driver_id || ""}</td>
+                    <td>${p.status}</td>
+                    <td>${p.speed || 0}</td>
+                    <td>${p.latitude || ""}, ${p.longitude || ""}</td>
+                </tr>
+            `;
+
+            if (!isNaN(lat) && !isNaN(lon)) {
+                latLngs.push([lat, lon]);
+
+                const marker = L.circleMarker([lat, lon], {
+                    radius: 5
+                }).addTo(map);
+
+                marker.bindPopup(`
+                    <b>Truck:</b> ${p.vehicle_id}<br>
+                    <b>Status:</b> ${p.status}<br>
+                    <b>Speed:</b> ${p.speed || 0}<br>
+                    <b>Time:</b> ${p.event_time}
+                `);
+
+                routeMarkers.push(marker);
+            }
+        });
+
+        if (latLngs.length > 0) {
+            routeLine = L.polyline(latLngs).addTo(map);
+            map.fitBounds(routeLine.getBounds());
+
+            document.getElementById("map_status").textContent =
+                `Showing route history for ${vehicleId}: ${latLngs.length} GPS point(s).`;
+        } else {
+            document.getElementById("map_status").textContent =
+                `No valid GPS route points for ${vehicleId}.`;
+        }
+
+    } catch (error) {
+        console.log("Route error", error);
+        document.getElementById("map_status").textContent = "Route history error.";
+    }
+}
+
+async function loadStatus() {
+    try {
+        const res = await fetch(`${API}/api/driver/current-status?driver_id=${driver()}`);
+        const data = await res.json();
+
+        document.getElementById("current_status").textContent =
+            `${data.current_status || "NO STATUS"} (${data.event_origin || "N/A"})`;
+
+        document.getElementById("status_details").innerHTML = `
+            Vehicle: ${data.vehicle_id || ""}<br>
+            Time: ${data.event_time || ""}<br>
+            Speed: ${data.speed || 0}<br>
+            GPS: ${data.latitude || ""}, ${data.longitude || ""}
+        `;
+    } catch (error) {
+        document.getElementById("current_status").textContent = "Backend Not Connected";
+    }
+}
+
+async function loadHOS() {
+    try {
+        const res = await fetch(`${API}/api/hos/summary?driver_id=${driver()}`);
+        const d = await res.json();
+
+        document.getElementById("hos").innerHTML = `
+            Driving Used: ${d.driving_hours} hrs / 11 hrs<br>
+            Driving Left: ${d.driving_remaining} hrs<br><br>
+            Shift Used: ${d.shift_hours} hrs / 14 hrs<br>
+            Shift Left: ${d.shift_remaining} hrs
+        `;
+
+        const box = document.getElementById("violation_box");
+
+        if (d.violation) {
+            box.style.display = "block";
+            box.textContent = "⚠ HOS VIOLATION: " + d.violation_message;
+        } else {
+            box.style.display = "none";
+            box.textContent = "";
+        }
+
+    } catch (error) {
+        console.log("HOS error", error);
+    }
+}
+
+async function loadUnassigned() {
+    try {
+        const res = await fetch(`${API}/api/unassigned`);
+        const data = await res.json();
+
+        const body = document.getElementById("unassigned_body");
+        body.innerHTML = "";
+
+        data.forEach(e => {
+            if (e.assigned === "YES") return;
+
+            body.innerHTML += `
+                <tr>
+                    <td>${e.id}</td>
+                    <td>${new Date(e.event_time).toLocaleString()}</td>
+                    <td>${e.vehicle_id}</td>
+                    <td>${e.speed}</td>
+                    <td><button class="btn-dot" onclick="assignEvent(${e.id})">Assign</button></td>
+                </tr>
+            `;
+        });
+
+    } catch (error) {
+        console.log("Unassigned error", error);
+    }
+}
+
+async function assignEvent(id) {
+    const d = driver();
+
+    if (!d.trim()) {
+        alert("Select driver first.");
+        return;
+    }
+
+    const res = await fetch(`${API}/api/unassigned/assign?event_id=${id}&driver_id=${d}`, {
+        method: "POST"
+    });
+
+    const data = await res.json();
+    alert(data.message || data.error);
+
+    loadAll();
+}
+
+async function loadEvents() {
+    try {
+        const res = await fetch(`${API}/api/eld/events?driver_id=${driver()}`);
+        const data = await res.json();
+
+        const body = document.getElementById("events_body");
+        body.innerHTML = "";
+
+        data.forEach(e => {
+            body.innerHTML += `
+                <tr>
+                    <td>${e.id}</td>
+                    <td>${new Date(e.event_time).toLocaleString()}</td>
+                    <td>${statusBadge(e.duty_status)}</td>
+                    <td>${e.vehicle_id}</td>
+                    <td>${e.event_origin || ""}</td>
+                    <td>${e.speed || 0}</td>
+                    <td>${e.latitude || ""}, ${e.longitude || ""}</td>
+                </tr>
+            `;
+        });
+
+    } catch (error) {
+        console.log("Events error", error);
+    }
+}
+
+async function loadEdits() {
+    try {
+        const res = await fetch(`${API}/api/eld/edits?driver_id=${driver()}`);
+        const edits = await res.json();
+
+        const body = document.getElementById("edits_body");
+        body.innerHTML = "";
+
+        edits.forEach(e => {
+            body.innerHTML += `
+                <tr>
+                    <td>${e.original_event_id}</td>
+                    <td>${e.new_event_id}</td>
+                    <td>${e.old_status}</td>
+                    <td>${e.new_status}</td>
+                    <td>${e.reason}</td>
+                    <td>${new Date(e.edited_at).toLocaleString()}</td>
+                </tr>
+            `;
+        });
+
+    } catch (error) {
+        console.log("Edits error", error);
+    }
+}
+
+async function loadCertifications() {
+    try {
+        const res = await fetch(`${API}/api/eld/certifications?driver_id=${driver()}`);
+        const certs = await res.json();
+
+        const body = document.getElementById("certs_body");
+        body.innerHTML = "";
+
+        certs.forEach(c => {
+            body.innerHTML += `
+                <tr>
+                    <td>${c.id}</td>
+                    <td>${c.driver_id}</td>
+                    <td>${c.log_date}</td>
+                    <td>${new Date(c.certified_at).toLocaleString()}</td>
+                    <td>${c.note}</td>
+                </tr>
+            `;
+        });
+
+    } catch (error) {
+        console.log("Cert error", error);
+    }
+}
+
+async function inspectionMode() {
+    const res = await fetch(`${API}/api/eld/output-file`);
+    const text = await res.text();
+    document.getElementById("dot_output").textContent = text;
+}
+
+function downloadFile() {
+    window.open(`${API}/api/eld/download`, "_blank");
+}
+
+function loadAll() {
+    loadStatus();
+    loadHOS();
+    loadUnassigned();
+    loadEvents();
+    loadEdits();
+    loadCertifications();
+    loadFleetMap();
+}
+
+window.onload = async function() {
+    showUserInfo();
+    initMap();
+    await loadDriverDropdown();
+    await loadVehicleDropdown();
+    loadAll();
+};
+
+setInterval(loadAll, 15000);
+</script>
+
+</body>
+</html>
