@@ -284,7 +284,13 @@ async function loadFleetMap() {
         const response = await fetch(`${API}/api/samsara/gps`);
         const trucks = await response.json();
 
-        let validCount = 0;
+        if (!Array.isArray(trucks)) {
+            console.log("API error:", trucks);
+            document.getElementById("map_status").textContent = "API error";
+            return;
+        }
+
+        let count = 0;
 
         trucks.forEach(t => {
             const lat = parseFloat(t.latitude);
@@ -292,30 +298,28 @@ async function loadFleetMap() {
 
             if (isNaN(lat) || isNaN(lon)) return;
 
-            validCount++;
+            count++;
 
             const popup = `
-                <b>Samsara Truck:</b> ${t.vehicle_id}<br>
-                <b>Speed:</b> ${t.speed || 0} mph<br>
-                <b>GPS:</b> ${lat}, ${lon}<br>
-                <b>Time:</b> ${t.time || ""}
+                <b>Truck:</b> ${t.vehicle_id}<br>
+                <b>Speed:</b> ${t.speed} mph
             `;
 
             if (truckMarkers[t.vehicle_id]) {
                 truckMarkers[t.vehicle_id].setLatLng([lat, lon]);
-                truckMarkers[t.vehicle_id].bindPopup(popup);
             } else {
                 truckMarkers[t.vehicle_id] = L.marker([lat, lon]).addTo(map);
-                truckMarkers[t.vehicle_id].bindPopup(popup);
             }
+
+            truckMarkers[t.vehicle_id].bindPopup(popup);
         });
 
         document.getElementById("map_status").textContent =
-            `Showing ${validCount} Samsara truck(s) live on map.`;
+            `Live trucks: ${count}`;
 
-    } catch (error) {
-        console.log("Samsara map error", error);
-        document.getElementById("map_status").textContent = "Samsara map error.";
+    } catch (err) {
+        console.log(err);
+        document.getElementById("map_status").textContent = "Map error";
     }
 }
 
