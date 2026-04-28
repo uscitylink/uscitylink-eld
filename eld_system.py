@@ -22,13 +22,23 @@ app.add_middleware(
 
 app.mount("/app", StaticFiles(directory="."), name="app")
 
-DATABASE_URL = "sqlite:///./eld.db"
+import os
 
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=NullPool
-)
+DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./eld.db")
+
+# Fix for Render PostgreSQL URL
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+# Use SQLite locally, PostgreSQL online
+if DATABASE_URL.startswith("sqlite"):
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        poolclass=NullPool
+    )
+else:
+    engine = create_engine(DATABASE_URL)
 
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
