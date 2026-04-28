@@ -1,15 +1,18 @@
-import requests
 import os
+import time
 import hashlib
-from fastapi import HTTPException
+import requests
+from datetime import datetime
+
 from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+
 from sqlalchemy import create_engine, Column, Integer, String, Float
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.pool import NullPool
-from datetime import datetime
+
 
 app = FastAPI()
 
@@ -23,15 +26,14 @@ app.add_middleware(
 
 app.mount("/app", StaticFiles(directory="."), name="app")
 
-import os
+
+# ---------------- DATABASE ----------------
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./eld.db")
 
-# Fix for Render PostgreSQL URL
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# Use SQLite locally, PostgreSQL online
 if DATABASE_URL.startswith("sqlite"):
     engine = create_engine(
         DATABASE_URL,
@@ -45,6 +47,8 @@ SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
 
 
+# ---------------- HELPERS ----------------
+
 def now_utc():
     return datetime.utcnow().isoformat()
 
@@ -52,19 +56,18 @@ def now_utc():
 def today_utc():
     return datetime.utcnow().date().isoformat()
 
+
+def create_salt():
+    return os.urandom(16).hex()
+
+
 def hash_password(password: str, salt: str):
-    import hashlib
     return hashlib.pbkdf2_hmac(
         "sha256",
         password.encode("utf-8"),
         salt.encode("utf-8"),
         100000
     ).hex()
-
-
-def create_salt():
-    import os
-    return os.urandom(16).hex()
 
 
 def get_event_code(duty_status):
@@ -76,6 +79,8 @@ def get_event_code(duty_status):
     }
     return mapping.get(duty_status.upper(), "0")
 
+
+# ---------------- TABLES ----------------
 
 class Driver(Base):
     __tablename__ = "drivers"
@@ -94,6 +99,18 @@ class Vehicle(Base):
     vehicle_id = Column(String, unique=True)
     vin = Column(String)
     plate = Column(String)
+    active = Column(String, default="YES")
+
+
+class UserAccount(Base):
+    __tablename__ = "user_accounts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True)
+    password_hash = Column(String)
+    password_salt = Column(String)
+    role = Column(String)
+    driver_id = Column(String, default="")
     active = Column(String, default="YES")
 
 
@@ -175,25 +192,110 @@ class UnassignedEvent(Base):
     assigned = Column(String, default="NO")
     assigned_driver = Column(String, default="")
 
-class UserAccount(Base):
-    __tablename__ = "user_accounts"
-
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True)
-    password_hash = Column(String)
-    password_salt = Column(String)
-    role = Column(String)
-    driver_id = Column(String, default="")
-    active = Column(String, default="YES")
-
 
 Base.metadata.create_all(bind=engine)
 
+
+# ---------------- HOME ----------------
 
 @app.get("/")
 def home():
     return {"status": "US Citylink ELD backend running"}
 
+
+# ---------------- AUTH ----------------
+
+@app.post("/api/auth/create-user")
+def create_user(username: str, password: str, role: str, driver_id: str = ""):
+    role = role.upper()
+
+    if role not in ["DRIVER", "ADMIN", "DISPATCHER"]:
+        return {"error": "Role must be DRIVER, ADMIN, or DISPATCHER"}
+
+    db = SessionLocal()
+
+    existing = db.query(UserAccount).filter(UserAccount.username == username).first()
+
+    if existing:
+        db.close()
+        return {"error": "Username already exists"}
+
+    salt = create_salt()
+    password_hash = hash_password(password, salt)
+
+    user = UserAccount(
+        username=username,
+        password_hash=password_hash,
+        password_salt=salt,
+        role=role,
+        driver_id=driver_id,
+        active="YES"
+    )
+
+    db.add(user)
+    db.commit()
+    db.close()
+
+    return {
+        "message": "User created securely",
+        "username": username,
+        "role": role,
+        "driver_id": driver_id
+    }
+
+
+@app.post("/api/auth/login")
+def login(username: str, password: str):
+    db = SessionLocal()
+
+    user = (
+        db.query(UserAccount)
+        .filter(UserAccount.username == username)
+        .filter(UserAccount.active == "YES")
+        .first()
+    )
+
+    if not user:
+        db.close()
+        return {"error": "Invalid username or password"}
+
+    test_hash = hash_password(password, user.password_salt)
+
+    if test_hash != user.password_hash:
+        db.close()
+        return {"error": "Invalid username or password"}
+
+    db.close()
+
+    return {
+        "message": "Login successful",
+        "username": user.username,
+        "role": user.role,
+        "driver_id": user.driver_id
+    }
+
+
+@app.get("/api/auth/users")
+def get_users():
+    db = SessionLocal()
+    users = db.query(UserAccount).order_by(UserAccount.id.desc()).all()
+    db.close()
+
+    safe_users = []
+
+    for u in users:
+        safe_users.append({
+            "id": u.id,
+            "username": u.username,
+            "role": u.role,
+            "driver_id": u.driver_id,
+            "active": u.active
+        })
+
+    return safe_users
+
+
+# ---------------- ADMIN ----------------
 
 @app.post("/api/admin/driver")
 def create_driver(driver_id: str, name: str, license_number: str = ""):
@@ -258,6 +360,8 @@ def get_vehicles():
     db.close()
     return vehicles
 
+
+# ---------------- ELD EVENTS ----------------
 
 @app.post("/api/eld/event")
 def add_event(
@@ -377,170 +481,6 @@ def vehicle_telemetry(
     }
 
 
-@app.get("/api/unassigned")
-def get_unassigned():
-    db = SessionLocal()
-    data = db.query(UnassignedEvent).order_by(UnassignedEvent.event_time.desc()).all()
-    db.close()
-    return data
-
-
-@app.post("/api/unassigned/assign")
-def assign_unassigned(event_id: int, driver_id: str):
-    db = SessionLocal()
-
-    event = db.query(UnassignedEvent).filter(UnassignedEvent.id == event_id).first()
-
-    if not event:
-        db.close()
-        return {"error": "Unassigned event not found"}
-
-    event.assigned = "YES"
-    event.assigned_driver = driver_id
-
-    new_event = ELDEvent(
-        driver_id=driver_id,
-        vehicle_id=event.vehicle_id,
-        duty_status="DRIVING",
-        event_time=event.event_time,
-        latitude=event.latitude,
-        longitude=event.longitude,
-        odometer="",
-        engine_hours="",
-        speed=event.speed,
-        event_origin="ASSIGNED"
-    )
-
-    db.add(new_event)
-    db.commit()
-    db.close()
-
-    return {"message": "Unassigned driving assigned to driver"}
-
-
-@app.post("/api/eld/edit-event")
-def edit_event(event_id: int, new_status: str, reason: str):
-    new_status = new_status.upper()
-
-    if new_status not in ["OFF", "SB", "ON"]:
-        return {"error": "Only OFF, SB, or ON are allowed for manual edits."}
-
-    if reason.strip() == "":
-        return {"error": "Edit reason is required."}
-
-    db = SessionLocal()
-
-    original = db.query(ELDEvent).filter(ELDEvent.id == event_id).first()
-
-    if not original:
-        db.close()
-        return {"error": "Original event not found."}
-
-    if original.duty_status == "DRIVING":
-        db.close()
-        return {"error": "DRIVING events cannot be edited."}
-
-    new_event = ELDEvent(
-        driver_id=original.driver_id,
-        vehicle_id=original.vehicle_id,
-        duty_status=new_status,
-        event_time=now_utc(),
-        latitude=original.latitude,
-        longitude=original.longitude,
-        odometer=original.odometer,
-        engine_hours=original.engine_hours,
-        speed=0,
-        event_origin="EDIT"
-    )
-
-    db.add(new_event)
-    db.commit()
-    db.refresh(new_event)
-
-    edit_record = ELDEventEdit(
-        original_event_id=original.id,
-        new_event_id=new_event.id,
-        driver_id=original.driver_id,
-        old_status=original.duty_status,
-        new_status=new_status,
-        reason=reason,
-        edited_at=now_utc()
-    )
-
-    db.add(edit_record)
-    db.commit()
-    db.close()
-
-    return {
-        "message": "Event edited. Original record preserved.",
-        "original_event_id": event_id,
-        "new_event_id": new_event.id,
-        "old_status": original.duty_status,
-        "new_status": new_status,
-        "reason": reason
-    }
-
-
-@app.get("/api/eld/edits")
-def get_edits(driver_id: str = ""):
-    db = SessionLocal()
-
-    query = db.query(ELDEventEdit)
-
-    if driver_id:
-        query = query.filter(ELDEventEdit.driver_id == driver_id)
-
-    edits = query.order_by(ELDEventEdit.edited_at.desc()).all()
-    db.close()
-
-    return edits
-
-
-@app.post("/api/eld/certify")
-def certify_log(
-    driver_id: str,
-    log_date: str = "",
-    note: str = "Driver certified log as true and correct"
-):
-    if not log_date:
-        log_date = today_utc()
-
-    db = SessionLocal()
-
-    cert = DriverCertification(
-        driver_id=driver_id,
-        log_date=log_date,
-        certified_at=now_utc(),
-        note=note
-    )
-
-    db.add(cert)
-    db.commit()
-    db.close()
-
-    return {
-        "message": "Driver log certified",
-        "driver_id": driver_id,
-        "log_date": log_date,
-        "note": note
-    }
-
-
-@app.get("/api/eld/certifications")
-def get_certifications(driver_id: str = ""):
-    db = SessionLocal()
-
-    query = db.query(DriverCertification)
-
-    if driver_id:
-        query = query.filter(DriverCertification.driver_id == driver_id)
-
-    certs = query.order_by(DriverCertification.certified_at.desc()).all()
-    db.close()
-
-    return certs
-
-
 @app.get("/api/eld/events")
 def get_events(driver_id: str = ""):
     db = SessionLocal()
@@ -556,39 +496,7 @@ def get_events(driver_id: str = ""):
     return events
 
 
-@app.post("/api/driver/login")
-def driver_login(driver_id: str):
-    db = SessionLocal()
-
-    log = DriverLog(
-        driver_id=driver_id,
-        action="LOGIN",
-        timestamp=now_utc()
-    )
-
-    db.add(log)
-    db.commit()
-    db.close()
-
-    return {"message": "driver logged in"}
-
-
-@app.post("/api/driver/logout")
-def driver_logout(driver_id: str):
-    db = SessionLocal()
-
-    log = DriverLog(
-        driver_id=driver_id,
-        action="LOGOUT",
-        timestamp=now_utc()
-    )
-
-    db.add(log)
-    db.commit()
-    db.close()
-
-    return {"message": "driver logged out"}
-
+# ---------------- CURRENT STATUS / HOS ----------------
 
 @app.get("/api/driver/current-status")
 def current_status(driver_id: str):
@@ -683,6 +591,214 @@ def hos_summary(driver_id: str):
     }
 
 
+# ---------------- DRIVER LOGIN LOGS ----------------
+
+@app.post("/api/driver/login")
+def driver_login(driver_id: str):
+    db = SessionLocal()
+
+    log = DriverLog(
+        driver_id=driver_id,
+        action="LOGIN",
+        timestamp=now_utc()
+    )
+
+    db.add(log)
+    db.commit()
+    db.close()
+
+    return {"message": "driver logged in"}
+
+
+@app.post("/api/driver/logout")
+def driver_logout(driver_id: str):
+    db = SessionLocal()
+
+    log = DriverLog(
+        driver_id=driver_id,
+        action="LOGOUT",
+        timestamp=now_utc()
+    )
+
+    db.add(log)
+    db.commit()
+    db.close()
+
+    return {"message": "driver logged out"}
+
+
+# ---------------- UNASSIGNED ----------------
+
+@app.get("/api/unassigned")
+def get_unassigned():
+    db = SessionLocal()
+    data = db.query(UnassignedEvent).order_by(UnassignedEvent.event_time.desc()).all()
+    db.close()
+    return data
+
+
+@app.post("/api/unassigned/assign")
+def assign_unassigned(event_id: int, driver_id: str):
+    db = SessionLocal()
+
+    event = db.query(UnassignedEvent).filter(UnassignedEvent.id == event_id).first()
+
+    if not event:
+        db.close()
+        return {"error": "Unassigned event not found"}
+
+    event.assigned = "YES"
+    event.assigned_driver = driver_id
+
+    new_event = ELDEvent(
+        driver_id=driver_id,
+        vehicle_id=event.vehicle_id,
+        duty_status="DRIVING",
+        event_time=event.event_time,
+        latitude=event.latitude,
+        longitude=event.longitude,
+        odometer="",
+        engine_hours="",
+        speed=event.speed,
+        event_origin="ASSIGNED"
+    )
+
+    db.add(new_event)
+    db.commit()
+    db.close()
+
+    return {"message": "Unassigned driving assigned to driver"}
+
+
+# ---------------- EDITS ----------------
+
+@app.post("/api/eld/edit-event")
+def edit_event(event_id: int, new_status: str, reason: str):
+    new_status = new_status.upper()
+
+    if new_status not in ["OFF", "SB", "ON"]:
+        return {"error": "Only OFF, SB, or ON are allowed for manual edits."}
+
+    if reason.strip() == "":
+        return {"error": "Edit reason is required."}
+
+    db = SessionLocal()
+
+    original = db.query(ELDEvent).filter(ELDEvent.id == event_id).first()
+
+    if not original:
+        db.close()
+        return {"error": "Original event not found."}
+
+    if original.duty_status == "DRIVING":
+        db.close()
+        return {"error": "DRIVING events cannot be edited."}
+
+    new_event = ELDEvent(
+        driver_id=original.driver_id,
+        vehicle_id=original.vehicle_id,
+        duty_status=new_status,
+        event_time=now_utc(),
+        latitude=original.latitude,
+        longitude=original.longitude,
+        odometer=original.odometer,
+        engine_hours=original.engine_hours,
+        speed=0,
+        event_origin="EDIT"
+    )
+
+    db.add(new_event)
+    db.commit()
+    db.refresh(new_event)
+
+    edit_record = ELDEventEdit(
+        original_event_id=original.id,
+        new_event_id=new_event.id,
+        driver_id=original.driver_id,
+        old_status=original.duty_status,
+        new_status=new_status,
+        reason=reason,
+        edited_at=now_utc()
+    )
+
+    db.add(edit_record)
+    db.commit()
+    db.close()
+
+    return {
+        "message": "Event edited. Original record preserved.",
+        "original_event_id": event_id,
+        "new_event_id": new_event.id,
+        "old_status": original.duty_status,
+        "new_status": new_status,
+        "reason": reason
+    }
+
+
+@app.get("/api/eld/edits")
+def get_edits(driver_id: str = ""):
+    db = SessionLocal()
+
+    query = db.query(ELDEventEdit)
+
+    if driver_id:
+        query = query.filter(ELDEventEdit.driver_id == driver_id)
+
+    edits = query.order_by(ELDEventEdit.edited_at.desc()).all()
+    db.close()
+
+    return edits
+
+
+# ---------------- CERTIFICATION ----------------
+
+@app.post("/api/eld/certify")
+def certify_log(
+    driver_id: str,
+    log_date: str = "",
+    note: str = "Driver certified log as true and correct"
+):
+    if not log_date:
+        log_date = today_utc()
+
+    db = SessionLocal()
+
+    cert = DriverCertification(
+        driver_id=driver_id,
+        log_date=log_date,
+        certified_at=now_utc(),
+        note=note
+    )
+
+    db.add(cert)
+    db.commit()
+    db.close()
+
+    return {
+        "message": "Driver log certified",
+        "driver_id": driver_id,
+        "log_date": log_date,
+        "note": note
+    }
+
+
+@app.get("/api/eld/certifications")
+def get_certifications(driver_id: str = ""):
+    db = SessionLocal()
+
+    query = db.query(DriverCertification)
+
+    if driver_id:
+        query = query.filter(DriverCertification.driver_id == driver_id)
+
+    certs = query.order_by(DriverCertification.certified_at.desc()).all()
+    db.close()
+
+    return certs
+
+
+# ---------------- ENGINE / MALFUNCTION ----------------
+
 @app.post("/api/engine")
 def engine_event(vehicle_id: str, status: str):
     db = SessionLocal()
@@ -716,6 +832,129 @@ def add_malfunction(type: str, description: str):
 
     return {"message": "malfunction recorded"}
 
+
+# ---------------- FLEET MAP LOCAL DB ----------------
+
+@app.get("/api/fleet/locations")
+def fleet_locations():
+    db = SessionLocal()
+
+    events = db.query(ELDEvent).order_by(ELDEvent.event_time.desc()).all()
+    db.close()
+
+    latest_by_vehicle = {}
+
+    for e in events:
+        if not e.vehicle_id:
+            continue
+
+        if e.vehicle_id not in latest_by_vehicle:
+            latest_by_vehicle[e.vehicle_id] = {
+                "vehicle_id": e.vehicle_id,
+                "driver_id": e.driver_id,
+                "status": e.duty_status,
+                "event_time": e.event_time,
+                "latitude": e.latitude,
+                "longitude": e.longitude,
+                "speed": e.speed,
+                "origin": e.event_origin
+            }
+
+    return list(latest_by_vehicle.values())
+
+
+@app.get("/api/fleet/route")
+def fleet_route(vehicle_id: str):
+    db = SessionLocal()
+
+    events = (
+        db.query(ELDEvent)
+        .filter(ELDEvent.vehicle_id == vehicle_id)
+        .order_by(ELDEvent.event_time)
+        .all()
+    )
+
+    db.close()
+
+    route = []
+
+    for e in events:
+        route.append({
+            "id": e.id,
+            "vehicle_id": e.vehicle_id,
+            "driver_id": e.driver_id,
+            "status": e.duty_status,
+            "event_time": e.event_time,
+            "latitude": e.latitude,
+            "longitude": e.longitude,
+            "speed": e.speed,
+            "origin": e.event_origin
+        })
+
+    return route
+
+
+# ---------------- SAMSARA GPS ----------------
+
+@app.get("/api/samsara/gps")
+def get_samsara_gps():
+    token = os.environ.get("SAMSARA_API_TOKEN")
+
+    if not token:
+        return {"error": "SAMSARA_API_TOKEN not set"}
+
+    url = "https://api.samsara.com/v1/fleet/vehicles/stats"
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json"
+    }
+
+    now_ms = int(time.time() * 1000)
+    start_ms = now_ms - (15 * 60 * 1000)
+
+    params = {
+        "types": "gps",
+        "startMs": start_ms
+    }
+
+    try:
+        res = requests.get(url, headers=headers, params=params, timeout=20)
+
+        if res.status_code != 200:
+            return {
+                "error": "Samsara API error",
+                "status_code": res.status_code,
+                "response": res.text
+            }
+
+        if not res.text:
+            return {"error": "Empty response from Samsara"}
+
+        data = res.json()
+        trucks = []
+
+        for vehicle in data.get("data", []):
+            gps = vehicle.get("gps")
+
+            if not gps:
+                continue
+
+            trucks.append({
+                "vehicle_id": vehicle.get("name") or vehicle.get("id"),
+                "latitude": gps.get("latitude"),
+                "longitude": gps.get("longitude"),
+                "speed": gps.get("speedMilesPerHour", 0),
+                "time": gps.get("time")
+            })
+
+        return trucks
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ---------------- DOT FILE ----------------
 
 @app.get("/api/eld/output-file", response_class=PlainTextResponse)
 def eld_output_file():
@@ -806,189 +1045,3 @@ def download_eld_file():
         media_type="text/plain",
         filename="eld_output_test.txt"
     )
-@app.get("/api/fleet/locations")
-def fleet_locations():
-    db = SessionLocal()
-
-    events = db.query(ELDEvent).order_by(ELDEvent.event_time.desc()).all()
-    db.close()
-
-    latest_by_vehicle = {}
-
-    for e in events:
-        if not e.vehicle_id:
-            continue
-
-        if e.vehicle_id not in latest_by_vehicle:
-            latest_by_vehicle[e.vehicle_id] = {
-                "vehicle_id": e.vehicle_id,
-                "driver_id": e.driver_id,
-                "status": e.duty_status,
-                "event_time": e.event_time,
-                "latitude": e.latitude,
-                "longitude": e.longitude,
-                "speed": e.speed,
-                "origin": e.event_origin
-            }
-
-    return list(latest_by_vehicle.values())
-@app.get("/api/fleet/route")
-def fleet_route(vehicle_id: str):
-    db = SessionLocal()
-
-    events = (
-        db.query(ELDEvent)
-        .filter(ELDEvent.vehicle_id == vehicle_id)
-        .order_by(ELDEvent.event_time)
-        .all()
-    )
-
-    db.close()
-
-    route = []
-@app.post("/api/auth/create-user")
-def create_user(
-    username: str,
-    password: str,
-    role: str,
-    driver_id: str = ""
-):
-    role = role.upper()
-
-    if role not in ["DRIVER", "ADMIN", "DISPATCHER"]:
-        return {"error": "Role must be DRIVER, ADMIN, or DISPATCHER"}
-
-    db = SessionLocal()
-
-    existing = db.query(UserAccount).filter(UserAccount.username == username).first()
-
-    if existing:
-        db.close()
-        return {"error": "Username already exists"}
-
-    salt = create_salt()
-    password_hash = hash_password(password, salt)
-
-    user = UserAccount(
-        username=username,
-        password_hash=password_hash,
-        password_salt=salt,
-        role=role,
-        driver_id=driver_id,
-        active="YES"
-    )
-
-    db.add(user)
-    db.commit()
-    db.close()
-
-    return {
-        "message": "User created securely",
-        "username": username,
-        "role": role,
-        "driver_id": driver_id
-    }
-
-
-@app.post("/api/auth/login")
-def login(username: str, password: str):
-    db = SessionLocal()
-
-    user = (
-        db.query(UserAccount)
-        .filter(UserAccount.username == username)
-        .filter(UserAccount.active == "YES")
-        .first()
-    )
-
-    if not user:
-        db.close()
-        return {"error": "Invalid username or password"}
-
-    test_hash = hash_password(password, user.password_salt)
-
-    if test_hash != user.password_hash:
-        db.close()
-        return {"error": "Invalid username or password"}
-
-    db.close()
-
-    return {
-        "message": "Login successful",
-        "username": user.username,
-        "role": user.role,
-        "driver_id": user.driver_id
-    }
-
-
-@app.get("/api/auth/users")
-def get_users():
-    db = SessionLocal()
-    users = db.query(UserAccount).order_by(UserAccount.id.desc()).all()
-    db.close()
-
-    safe_users = []
-
-    for u in users:
-        safe_users.append({
-            "id": u.id,
-            "username": u.username,
-            "role": u.role,
-            "driver_id": u.driver_id,
-            "active": u.active
-        })
-
-    return safe_users
-
-@app.get("/api/samsara/gps")
-def get_samsara_gps():
-    token = os.environ.get("SAMSARA_API_TOKEN")
-
-    if not token:
-        return {"error": "SAMSARA_API_TOKEN not set"}
-
-    url = "https://api.samsara.com/v1/fleet/vehicles/stats"
-
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json"
-    }
-
-    params = {
-        "types": "gps"
-    }
-
-    try:
-        res = requests.get(url, headers=headers, params=params, timeout=20)
-
-        if res.status_code != 200:
-            return {
-                "error": "Samsara API error",
-                "status_code": res.status_code,
-                "response": res.text
-            }
-
-        if not res.text:
-            return {"error": "Empty response from Samsara"}
-
-        data = res.json()
-        trucks = []
-
-        for vehicle in data.get("data", []):
-            gps = vehicle.get("gps")
-
-            if not gps:
-                continue
-
-            trucks.append({
-                "vehicle_id": vehicle.get("name") or vehicle.get("id"),
-                "latitude": gps.get("latitude"),
-                "longitude": gps.get("longitude"),
-                "speed": gps.get("speedMilesPerHour", 0),
-                "time": gps.get("time")
-            })
-
-        return trucks
-
-    except Exception as e:
-        return {"error": str(e)}
