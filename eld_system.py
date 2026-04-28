@@ -915,7 +915,8 @@ def get_samsara_gps():
 
     params = {
         "types": "gps",
-        "startMs": start_ms
+        "startMs": start_ms,
+        "endMs": now_ms
     }
 
     try:
