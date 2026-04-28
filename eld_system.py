@@ -965,14 +965,14 @@ def get_samsara_gps():
             return {
                 "error": "Samsara API error",
                 "status_code": res.status_code,
-                "response": res.text[:500]
+                "response": res.text
             }
 
-if not res.text:
-    return {"error": "Empty response from Samsara"}
+        if not res.text:
+            return {"error": "Empty response from Samsara"}
 
-    data = res.json()
-    trucks = []
+        data = res.json()
+        trucks = []
 
         for vehicle in data.get("data", []):
             gps = vehicle.get("gps")
