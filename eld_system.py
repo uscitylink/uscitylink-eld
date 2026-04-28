@@ -968,7 +968,7 @@ def get_samsara_gps():
                 "response": res.text[:500]
             }
 
-        if not res.text:
+if not res.text:
     return {"error": "Empty response from Samsara"}
 
     data = res.json()
