@@ -1,3 +1,4 @@
+import requests
 import os
 import hashlib
 from fastapi import HTTPException
@@ -938,3 +939,41 @@ def get_users():
         })
 
     return safe_users
+
+@app.get("/api/samsara/gps")
+def get_samsara_gps():
+    token = os.environ.get("SAMSARA_API_TOKEN")
+
+    if not token:
+        return {"error": "SAMSARA_API_TOKEN not set"}
+
+    url = "https://api.samsara.com/fleet/vehicles/stats?types=gps"
+
+    headers = {
+        "Authorization": f"Bearer {token}"
+    }
+
+    try:
+        res = requests.get(url, headers=headers)
+        data = res.json()
+
+        trucks = []
+
+        for vehicle in data.get("data", []):
+            gps = vehicle.get("gps")
+
+            if not gps:
+                continue
+
+            trucks.append({
+                "vehicle_id": vehicle.get("name") or vehicle.get("id"),
+                "latitude": gps.get("latitude"),
+                "longitude": gps.get("longitude"),
+                "speed": gps.get("speedMilesPerHour", 0),
+                "time": gps.get("time")
+            })
+
+        return trucks
+
+    except Exception as e:
+        return {"error": str(e)}
