@@ -911,7 +911,7 @@ def get_samsara_gps():
     }
 
     now_ms = int(time.time() * 1000)
-    start_ms = now_ms - (15 * 60 * 1000)
+    start_ms = now_ms - (24 * 60 * 60 * 1000)
 
     params = {
         "types": "gps",
