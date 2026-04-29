@@ -165,6 +165,7 @@ async function loadVehicles() {
         const option = document.createElement("option");
         option.value = v.vehicle_id;
         option.textContent = v.vehicle_id;
+        option.dataset.sid = v.samsara_vehicle_id;
         select.appendChild(option);
     });
 }
