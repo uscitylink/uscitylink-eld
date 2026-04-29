@@ -1139,3 +1139,121 @@ def get_active_assignments():
 
     db.close()
     return assignments
+@app.get("/api/samsara/drivers")
+def get_samsara_drivers():
+    token = os.environ.get("SAMSARA_API_TOKEN")
+
+    if not token:
+        return {"error": "SAMSARA_API_TOKEN not set"}
+
+    url = "https://api.samsara.com/fleet/drivers"
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json"
+    }
+
+    params = {
+        "limit": 512
+    }
+
+    try:
+        res = requests.get(url, headers=headers, params=params, timeout=20)
+
+        if res.status_code != 200:
+            return {
+                "error": "Samsara Driver API error",
+                "status_code": res.status_code,
+                "response": res.text
+            }
+
+        data = res.json()
+        drivers = []
+
+        for d in data.get("data", []):
+            drivers.append({
+                "driver_id": d.get("id"),
+                "name": d.get("name") or d.get("username") or "Unknown",
+                "license_number": d.get("licenseNumber") or "",
+                "username": d.get("username") or "",
+                "active": "YES" if not d.get("isDeactivated") else "NO"
+            })
+
+        return drivers
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.post("/api/samsara/import-drivers")
+def import_samsara_drivers():
+    token = os.environ.get("SAMSARA_API_TOKEN")
+
+    if not token:
+        return {"error": "SAMSARA_API_TOKEN not set"}
+
+    url = "https://api.samsara.com/fleet/drivers"
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json"
+    }
+
+    params = {
+        "limit": 512
+    }
+
+    try:
+        res = requests.get(url, headers=headers, params=params, timeout=20)
+
+        if res.status_code != 200:
+            return {
+                "error": "Samsara Driver API error",
+                "status_code": res.status_code,
+                "response": res.text
+            }
+
+        data = res.json()
+        db = SessionLocal()
+
+        imported = 0
+        skipped = 0
+
+        for d in data.get("data", []):
+            samsara_id = d.get("id")
+            name = d.get("name") or d.get("username") or "Unknown"
+            license_number = d.get("licenseNumber") or ""
+            active = "YES" if not d.get("isDeactivated") else "NO"
+
+            if not samsara_id:
+                skipped += 1
+                continue
+
+            existing = db.query(Driver).filter(Driver.driver_id == samsara_id).first()
+
+            if existing:
+                existing.name = name
+                existing.license_number = license_number
+                existing.active = active
+                skipped += 1
+            else:
+                driver = Driver(
+                    driver_id=samsara_id,
+                    name=name,
+                    license_number=license_number,
+                    active=active
+                )
+                db.add(driver)
+                imported += 1
+
+        db.commit()
+        db.close()
+
+        return {
+            "message": "Samsara drivers imported",
+            "imported": imported,
+            "updated_or_skipped": skipped
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
