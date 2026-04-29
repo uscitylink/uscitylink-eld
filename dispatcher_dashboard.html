@@ -119,13 +119,13 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
 
 let markers = [];
 let assignmentMap = {};
+let routeLine = null;
+let routeMarkers = [];
 
 async function loadDrivers() {
     try {
         const res = await fetch(`${API}/api/admin/drivers`);
         const data = await res.json();
-
-        console.log("Drivers:", data);  // debug
 
         const select = document.getElementById("driverSelect");
         select.innerHTML = "";
@@ -148,67 +148,97 @@ async function loadDrivers() {
 }
 
 async function loadVehicles() {
-    const res = await fetch(`${API}/api/samsara/gps`);
-    const data = await res.json();
+    try {
+        const res = await fetch(`${API}/api/samsara/gps`);
+        const data = await res.json();
 
-    const select = document.getElementById("vehicleSelect");
-    select.innerHTML = "";
+        const select = document.getElementById("vehicleSelect");
+        select.innerHTML = "";
 
-    const seen = {};
+        if (!Array.isArray(data) || data.length === 0) {
+            select.innerHTML = "<option>No vehicles found</option>";
+            return;
+        }
 
-    data.forEach(v => {
-        if (!v.vehicle_id) return;
-        if (seen[v.vehicle_id]) return;
+        const seen = {};
 
-        seen[v.vehicle_id] = true;
+        data.forEach(v => {
+            if (!v.vehicle_id) return;
+            if (seen[v.vehicle_id]) return;
 
-        const option = document.createElement("option");
-        option.value = v.vehicle_id;
-        option.textContent = v.vehicle_id;
-        option.dataset.sid = v.samsara_vehicle_id;
-        select.appendChild(option);
-    });
+            seen[v.vehicle_id] = true;
+
+            const option = document.createElement("option");
+            option.value = v.vehicle_id;
+            option.textContent = v.vehicle_id;
+            option.dataset.sid = v.samsara_vehicle_id || "";
+            select.appendChild(option);
+        });
+
+    } catch (err) {
+        console.error("Vehicle load error:", err);
+    }
 }
 
 async function assign() {
-    const driver = document.getElementById("driverSelect").value;
-    const select = document.getElementById("vehicleSelect");
-    const vehicleId = select.value;
-    const samsaraId = select.options[select.selectedIndex].dataset.sid;
-    const res = await fetch(`${API}/api/assignment/create?driver_id=${driver}&vehicle_id=${vehicle}`, {
-        method: "POST"
-    });
+    try {
+        const driver = document.getElementById("driverSelect").value;
+        const vehicle = document.getElementById("vehicleSelect").value;
 
-    const data = await res.json();
+        if (!driver || !vehicle) {
+            alert("Select driver and vehicle first.");
+            return;
+        }
 
-    document.getElementById("assignStatus").textContent =
-        data.message + ": " + driver + " → " + vehicle;
+        const res = await fetch(`${API}/api/assignment/create?driver_id=${encodeURIComponent(driver)}&vehicle_id=${encodeURIComponent(vehicle)}`, {
+            method: "POST"
+        });
 
-    await loadAssignments();
-    await loadFleet();
+        const data = await res.json();
+
+        document.getElementById("assignStatus").textContent =
+            (data.message || "Saved") + ": " + driver + " → " + vehicle;
+
+        await loadAssignments();
+        await loadFleet();
+
+    } catch (err) {
+        console.error("Assign error:", err);
+        alert("Assignment error.");
+    }
 }
 
 async function loadAssignments() {
-    const res = await fetch(`${API}/api/assignment/active`);
-    const data = await res.json();
+    try {
+        const res = await fetch(`${API}/api/assignment/active`);
+        const data = await res.json();
 
-    assignmentMap = {};
+        assignmentMap = {};
 
-    const body = document.getElementById("assignmentBody");
-    body.innerHTML = "";
+        const body = document.getElementById("assignmentBody");
+        body.innerHTML = "";
 
-    data.forEach(a => {
-        assignmentMap[a.vehicle_id] = a.driver_id;
+        if (!Array.isArray(data)) {
+            body.innerHTML = `<tr><td colspan="4">Assignment API error</td></tr>`;
+            return;
+        }
 
-        body.innerHTML += `
-            <tr>
-                <td>${a.driver_id}</td>
-                <td>${a.vehicle_id}</td>
-                <td>${a.assigned_at}</td>
-                <td>${a.active}</td>
-            </tr>
-        `;
-    });
+        data.forEach(a => {
+            assignmentMap[a.vehicle_id] = a.driver_id;
+
+            body.innerHTML += `
+                <tr>
+                    <td>${a.driver_id}</td>
+                    <td>${a.vehicle_id}</td>
+                    <td>${a.assigned_at}</td>
+                    <td>${a.active}</td>
+                </tr>
+            `;
+        });
+
+    } catch (err) {
+        console.error("Assignment load error:", err);
+    }
 }
 
 async function loadFleet() {
@@ -262,6 +292,7 @@ async function loadFleet() {
                 .addTo(map)
                 .bindPopup(
                     `<b>Truck:</b> ${truck.vehicle_id}<br>
+                     <b>Samsara ID:</b> ${truck.samsara_vehicle_id || ""}<br>
                      <b>Assigned Driver:</b> ${assignedDriver}<br>
                      <b>Speed:</b> ${truck.speed || 0} mph<br>
                      <b>Time:</b> ${truck.time || ""}<br>
@@ -280,6 +311,79 @@ async function loadFleet() {
     }
 }
 
+async function showRoute() {
+    try {
+        const select = document.getElementById("vehicleSelect");
+        const vehicleId = select.value;
+        const selectedOption = select.options[select.selectedIndex];
+        const samsaraId = selectedOption ? selectedOption.dataset.sid : "";
+
+        if (!vehicleId) {
+            alert("Select vehicle first.");
+            return;
+        }
+
+        if (!samsaraId) {
+            alert("No Samsara internal vehicle ID found for this truck.");
+            return;
+        }
+
+        routeMarkers.forEach(m => map.removeLayer(m));
+        routeMarkers = [];
+
+        if (routeLine) {
+            map.removeLayer(routeLine);
+            routeLine = null;
+        }
+
+        const res = await fetch(`${API}/api/samsara/route?vehicle_id=${encodeURIComponent(samsaraId)}&hours=24`);
+        const data = await res.json();
+
+        if (!Array.isArray(data)) {
+            alert("Route API error: " + JSON.stringify(data));
+            return;
+        }
+
+        const points = [];
+
+        data.forEach(p => {
+            if (!p.latitude || !p.longitude) return;
+
+            const lat = parseFloat(p.latitude);
+            const lon = parseFloat(p.longitude);
+
+            if (isNaN(lat) || isNaN(lon)) return;
+
+            points.push([lat, lon]);
+
+            const marker = L.circleMarker([lat, lon], {
+                radius: 4
+            }).addTo(map);
+
+            marker.bindPopup(
+                `<b>Truck:</b> ${p.vehicle_id}<br>
+                 <b>Samsara ID:</b> ${p.samsara_vehicle_id || ""}<br>
+                 <b>Speed:</b> ${p.speed || 0} mph<br>
+                 <b>Time:</b> ${p.time || ""}`
+            );
+
+            routeMarkers.push(marker);
+        });
+
+        if (points.length === 0) {
+            alert("No route data found for this truck in last 24 hours.");
+            return;
+        }
+
+        routeLine = L.polyline(points).addTo(map);
+        map.fitBounds(routeLine.getBounds());
+
+    } catch (err) {
+        console.error("Route error:", err);
+        alert("Route error.");
+    }
+}
+
 async function startPage() {
     await loadDrivers();
     await loadVehicles();
@@ -293,54 +397,3 @@ setInterval(loadFleet, 10000);
 
 </body>
 </html>
-let routeLine = null;
-let routeMarkers = [];
-
-async function showRoute() {
-    const select = document.getElementById("vehicleSelect");
-    const vehicleId = select.value;
-    const samsaraId = select.options[select.selectedIndex].dataset.sid;
-
-    if (!vehicleId) {
-        alert("Select vehicle first");
-        return;
-    }
-
-    routeMarkers.forEach(m => map.removeLayer(m));
-    routeMarkers = [];
-
-    if (routeLine) {
-        map.removeLayer(routeLine);
-        routeLine = null;
-    }
-
-    const res = await fetch(`${API}/api/samsara/route?vehicle_id=${samsaraId}&hours=24`)
-    const data = await res.json();
-
-    if (!Array.isArray(data)) {
-        alert("Route API error");
-        return;
-    }
-
-    const points = [];
-
-    data.forEach(p => {
-        if (!p.latitude || !p.longitude) return;
-
-        const lat = parseFloat(p.latitude);
-        const lon = parseFloat(p.longitude);
-
-        points.push([lat, lon]);
-
-        const marker = L.circleMarker([lat, lon], { radius: 4 }).addTo(map);
-        routeMarkers.push(marker);
-    });
-
-    if (points.length === 0) {
-        alert("No route data");
-        return;
-    }
-
-    routeLine = L.polyline(points).addTo(map);
-    map.fitBounds(routeLine.getBounds());
-}
