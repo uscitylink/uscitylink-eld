@@ -15,7 +15,9 @@
             padding: 20px;
         }
 
-        h1 { color: #38bdf8; }
+        h1 {
+            color: #38bdf8;
+        }
 
         .panel {
             background: #1e293b;
@@ -37,8 +39,16 @@
             cursor: pointer;
         }
 
+        .btn-blue {
+            background: #2563eb;
+        }
+
+        .btn-orange {
+            background: #f59e0b;
+        }
+
         #map {
-            height: 520px;
+            height: 540px;
             border-radius: 10px;
             margin-top: 20px;
         }
@@ -63,7 +73,9 @@
             font-size: 13px;
         }
 
-        th { background: #e5e7eb; }
+        th {
+            background: #e5e7eb;
+        }
     </style>
 </head>
 
@@ -84,7 +96,7 @@
 
 <div class="panel">
     <h3>Active Assignments</h3>
-    <button onclick="loadAssignments()">REFRESH ASSIGNMENTS</button>
+    <button class="btn-blue" onclick="loadAssignments()">REFRESH ASSIGNMENTS</button>
 
     <table>
         <thead>
@@ -101,7 +113,9 @@
 
 <h3>Live Fleet Map</h3>
 
-<button onclick="showRoute()">SHOW ROUTE</button>
+<button class="btn-blue" onclick="loadFleet()">REFRESH MAP</button>
+<button class="btn-orange" onclick="showRoute()">SHOW ROUTE TRAIL</button>
+<button onclick="clearRoute()">CLEAR ROUTE</button>
 
 <div id="map"></div>
 <p id="mapStatus">Loading trucks...</p>
@@ -131,7 +145,7 @@ async function loadDrivers() {
         select.innerHTML = "";
 
         if (!Array.isArray(data) || data.length === 0) {
-            select.innerHTML = "<option>No drivers found</option>";
+            select.innerHTML = "<option value=''>No drivers found</option>";
             return;
         }
 
@@ -153,27 +167,42 @@ async function loadVehicles() {
         const data = await res.json();
 
         const select = document.getElementById("vehicleSelect");
+        const oldValue = select.value;
         select.innerHTML = "";
 
         if (!Array.isArray(data) || data.length === 0) {
-            select.innerHTML = "<option>No vehicles found</option>";
+            select.innerHTML = "<option value=''>No vehicles found</option>";
             return;
         }
 
-        const seen = {};
+        const latest = {};
 
         data.forEach(v => {
             if (!v.vehicle_id) return;
-            if (seen[v.vehicle_id]) return;
 
-            seen[v.vehicle_id] = true;
+            if (!latest[v.vehicle_id]) {
+                latest[v.vehicle_id] = v;
+            } else {
+                const oldTime = new Date(latest[v.vehicle_id].time || 0);
+                const newTime = new Date(v.time || 0);
 
+                if (newTime > oldTime) {
+                    latest[v.vehicle_id] = v;
+                }
+            }
+        });
+
+        Object.values(latest).forEach(v => {
             const option = document.createElement("option");
             option.value = v.vehicle_id;
             option.textContent = v.vehicle_id;
             option.dataset.sid = v.samsara_vehicle_id || "";
             select.appendChild(option);
         });
+
+        if (oldValue) {
+            select.value = oldValue;
+        }
 
     } catch (err) {
         console.error("Vehicle load error:", err);
@@ -190,9 +219,10 @@ async function assign() {
             return;
         }
 
-        const res = await fetch(`${API}/api/assignment/create?driver_id=${encodeURIComponent(driver)}&vehicle_id=${encodeURIComponent(vehicle)}`, {
-            method: "POST"
-        });
+        const res = await fetch(
+            `${API}/api/assignment/create?driver_id=${encodeURIComponent(driver)}&vehicle_id=${encodeURIComponent(vehicle)}`,
+            { method: "POST" }
+        );
 
         const data = await res.json();
 
@@ -223,6 +253,11 @@ async function loadAssignments() {
             return;
         }
 
+        if (data.length === 0) {
+            body.innerHTML = `<tr><td colspan="4">No active assignments</td></tr>`;
+            return;
+        }
+
         data.forEach(a => {
             assignmentMap[a.vehicle_id] = a.driver_id;
 
@@ -241,9 +276,20 @@ async function loadAssignments() {
     }
 }
 
+async function saveGpsPoints() {
+    try {
+        await fetch(`${API}/api/samsara/save-gps`, {
+            method: "POST"
+        });
+    } catch (err) {
+        console.error("Save GPS error:", err);
+    }
+}
+
 async function loadFleet() {
     try {
         await loadAssignments();
+        await saveGpsPoints();
 
         const res = await fetch(`${API}/api/samsara/gps`);
         const data = await res.json();
@@ -262,16 +308,14 @@ async function loadFleet() {
         data.forEach(truck => {
             if (!truck.vehicle_id || !truck.latitude || !truck.longitude) return;
 
-            const id = truck.vehicle_id;
-
-            if (!latest[id]) {
-                latest[id] = truck;
+            if (!latest[truck.vehicle_id]) {
+                latest[truck.vehicle_id] = truck;
             } else {
-                const oldTime = new Date(latest[id].time || 0);
+                const oldTime = new Date(latest[truck.vehicle_id].time || 0);
                 const newTime = new Date(truck.time || 0);
 
                 if (newTime > oldTime) {
-                    latest[id] = truck;
+                    latest[truck.vehicle_id] = truck;
                 }
             }
         });
@@ -292,7 +336,6 @@ async function loadFleet() {
                 .addTo(map)
                 .bindPopup(
                     `<b>Truck:</b> ${truck.vehicle_id}<br>
-                     <b>Samsara ID:</b> ${truck.samsara_vehicle_id || ""}<br>
                      <b>Assigned Driver:</b> ${assignedDriver}<br>
                      <b>Speed:</b> ${truck.speed || 0} mph<br>
                      <b>Time:</b> ${truck.time || ""}<br>
@@ -303,7 +346,7 @@ async function loadFleet() {
         });
 
         document.getElementById("mapStatus").textContent =
-            `Showing latest location for ${count} truck(s).`;
+            `Showing latest location for ${count} truck(s). GPS trail is saving automatically.`;
 
     } catch (err) {
         console.error("Fleet map error:", err);
@@ -313,30 +356,16 @@ async function loadFleet() {
 
 async function showRoute() {
     try {
-        const select = document.getElementById("vehicleSelect");
-        const vehicleId = select.value;
-        const selectedOption = select.options[select.selectedIndex];
-        const samsaraId = selectedOption ? selectedOption.dataset.sid : "";
+        const vehicleId = document.getElementById("vehicleSelect").value;
 
         if (!vehicleId) {
             alert("Select vehicle first.");
             return;
         }
 
-        if (!samsaraId) {
-            alert("No Samsara internal vehicle ID found for this truck.");
-            return;
-        }
+        clearRoute();
 
-        routeMarkers.forEach(m => map.removeLayer(m));
-        routeMarkers = [];
-
-        if (routeLine) {
-            map.removeLayer(routeLine);
-            routeLine = null;
-        }
-
-        const res = await fetch(`${API}/api/samsara/route?vehicle_id=${encodeURIComponent(samsaraId)}&hours=24`);
+        const res = await fetch(`${API}/api/gps/route?vehicle_id=${encodeURIComponent(vehicleId)}&limit=500`);
         const data = await res.json();
 
         if (!Array.isArray(data)) {
@@ -362,7 +391,6 @@ async function showRoute() {
 
             marker.bindPopup(
                 `<b>Truck:</b> ${p.vehicle_id}<br>
-                 <b>Samsara ID:</b> ${p.samsara_vehicle_id || ""}<br>
                  <b>Speed:</b> ${p.speed || 0} mph<br>
                  <b>Time:</b> ${p.time || ""}`
             );
@@ -371,16 +399,29 @@ async function showRoute() {
         });
 
         if (points.length === 0) {
-            alert("No route data found for this truck in last 24 hours.");
+            alert("No saved route yet. Leave dispatcher open for 5–10 minutes so GPS trail can save.");
             return;
         }
 
         routeLine = L.polyline(points).addTo(map);
         map.fitBounds(routeLine.getBounds());
 
+        document.getElementById("mapStatus").textContent =
+            `Showing saved route trail for ${vehicleId}: ${points.length} point(s).`;
+
     } catch (err) {
         console.error("Route error:", err);
         alert("Route error.");
+    }
+}
+
+function clearRoute() {
+    routeMarkers.forEach(m => map.removeLayer(m));
+    routeMarkers = [];
+
+    if (routeLine) {
+        map.removeLayer(routeLine);
+        routeLine = null;
     }
 }
 
@@ -392,6 +433,7 @@ async function startPage() {
 }
 
 startPage();
+
 setInterval(loadFleet, 10000);
 </script>
 
