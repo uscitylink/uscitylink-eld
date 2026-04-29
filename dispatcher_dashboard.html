@@ -100,6 +100,9 @@
 </div>
 
 <h3>Live Fleet Map</h3>
+
+<button onclick="showRoute()">SHOW ROUTE</button>
+
 <div id="map"></div>
 <p id="mapStatus">Loading trucks...</p>
 
@@ -288,3 +291,52 @@ setInterval(loadFleet, 10000);
 
 </body>
 </html>
+let routeLine = null;
+let routeMarkers = [];
+
+async function showRoute() {
+    const vehicleId = document.getElementById("vehicleSelect").value;
+
+    if (!vehicleId) {
+        alert("Select vehicle first");
+        return;
+    }
+
+    routeMarkers.forEach(m => map.removeLayer(m));
+    routeMarkers = [];
+
+    if (routeLine) {
+        map.removeLayer(routeLine);
+        routeLine = null;
+    }
+
+    const res = await fetch(`${API}/api/samsara/route?vehicle_id=${encodeURIComponent(vehicleId)}&hours=24`);
+    const data = await res.json();
+
+    if (!Array.isArray(data)) {
+        alert("Route API error");
+        return;
+    }
+
+    const points = [];
+
+    data.forEach(p => {
+        if (!p.latitude || !p.longitude) return;
+
+        const lat = parseFloat(p.latitude);
+        const lon = parseFloat(p.longitude);
+
+        points.push([lat, lon]);
+
+        const marker = L.circleMarker([lat, lon], { radius: 4 }).addTo(map);
+        routeMarkers.push(marker);
+    });
+
+    if (points.length === 0) {
+        alert("No route data");
+        return;
+    }
+
+    routeLine = L.polyline(points).addTo(map);
+    map.fitBounds(routeLine.getBounds());
+}
