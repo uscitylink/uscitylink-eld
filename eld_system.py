@@ -944,6 +944,7 @@ def get_samsara_gps():
 
             trucks.append({
                 "vehicle_id": vehicle.get("name") or vehicle.get("id"),
+                "samsara_vehicle_id": vehicle.get("id"),
                 "latitude": gps.get("latitude"),
                 "longitude": gps.get("longitude"),
                 "speed": gps.get("speedMilesPerHour", 0),
