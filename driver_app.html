@@ -2,10 +2,7 @@
 <html>
 <head>
     <title>US Citylink ELD Driver App</title>
-
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <!-- Leaflet -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
     <style>
@@ -17,15 +14,7 @@
             padding: 20px;
         }
 
-        h1 {
-            color: #38bdf8;
-        }
-
-        #map {
-            height: 500px;
-            margin-top: 20px;
-            border-radius: 10px;
-        }
+        h1 { color: #38bdf8; }
 
         .box {
             background: #1e293b;
@@ -34,13 +23,23 @@
             margin-bottom: 20px;
         }
 
-        button {
+        select, button {
             padding: 10px;
             border-radius: 6px;
             border: none;
+            margin: 5px;
+        }
+
+        button {
             background: #22c55e;
             color: white;
             cursor: pointer;
+        }
+
+        #map {
+            height: 500px;
+            margin-top: 20px;
+            border-radius: 10px;
         }
     </style>
 </head>
@@ -50,78 +49,141 @@
 <h1>US Citylink ELD Driver App</h1>
 
 <div class="box">
+    <h3>Driver / Vehicle</h3>
+
+    <label>Driver:</label><br>
+    <select id="driver_id"></select>
+
+    <br><br>
+
+    <label>Vehicle:</label><br>
+    <select id="vehicle_id"></select>
+</div>
+
+<div class="box">
     <h3>Current Driver Status</h3>
     <p id="status">LIVE GPS CONNECTED</p>
 </div>
 
-<button onclick="loadFleet()">Refresh</button>
+<button onclick="loadFleet()">Refresh Map</button>
 
 <h3>Fleet Map + Route History</h3>
-
 <div id="map"></div>
 
 <p id="map-status" style="color:red;"></p>
 
-<!-- Leaflet -->
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
+const API = window.location.origin;
 
-    // Create map
-    var map = L.map('map').setView([36, -119], 6);
+var map = L.map("map").setView([36, -119], 6);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap'
-    }).addTo(map);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "© OpenStreetMap"
+}).addTo(map);
 
-    // Store markers
-    let markers = [];
+let markers = [];
 
-    // Load Samsara GPS
-    async function loadFleet() {
-        try {
-            const res = await fetch("https://uscitylink-eld.onrender.com/api/samsara/gps");
-            const data = await res.json();
+async function loadDriverDropdown() {
+    try {
+        const response = await fetch(`${API}/api/admin/drivers`);
+        const drivers = await response.json();
 
-            console.log(data);
+        const select = document.getElementById("driver_id");
+        select.innerHTML = "";
 
-            // Clear old markers
-            markers.forEach(m => map.removeLayer(m));
-            markers = [];
-
-            if (!Array.isArray(data)) {
-                document.getElementById("map-status").innerText = "API error";
-                return;
-            }
-
-            data.forEach(truck => {
-                if (!truck.latitude || !truck.longitude) return;
-
-                const marker = L.marker([truck.latitude, truck.longitude])
-                    .addTo(map)
-                    .bindPopup(
-                        "<b>" + truck.vehicle_id + "</b><br>" +
-                        "Speed: " + truck.speed + " mph<br>" +
-                        "Time: " + truck.time
-                    );
-
-                markers.push(marker);
-            });
-
-            document.getElementById("map-status").innerText = "";
-
-        } catch (err) {
-            console.error(err);
-            document.getElementById("map-status").innerText = "Map error";
+        if (!Array.isArray(drivers) || drivers.length === 0) {
+            select.innerHTML = `<option>No drivers found</option>`;
+            return;
         }
+
+        drivers.forEach(d => {
+            const option = document.createElement("option");
+            option.value = d.driver_id;
+            option.textContent = `${d.name} (${d.driver_id})`;
+            select.appendChild(option);
+        });
+
+    } catch (error) {
+        console.log("Driver dropdown error:", error);
     }
+}
 
-    // Run on load
-    loadFleet();
+async function loadVehicleDropdown() {
+    try {
+        const response = await fetch(`${API}/api/samsara/gps`);
+        const vehicles = await response.json();
 
-    // Auto refresh every 10 sec
-    setInterval(loadFleet, 10000);
+        const select = document.getElementById("vehicle_id");
+        select.innerHTML = "";
 
+        if (!Array.isArray(vehicles) || vehicles.length === 0) {
+            select.innerHTML = `<option>No vehicles found</option>`;
+            return;
+        }
+
+        const seen = {};
+
+        vehicles.forEach(v => {
+            if (!v.vehicle_id) return;
+            if (seen[v.vehicle_id]) return;
+
+            seen[v.vehicle_id] = true;
+
+            const option = document.createElement("option");
+            option.value = v.vehicle_id;
+            option.textContent = v.vehicle_id;
+            select.appendChild(option);
+        });
+
+    } catch (error) {
+        console.log("Vehicle dropdown error:", error);
+    }
+}
+
+async function loadFleet() {
+    try {
+        const res = await fetch(`${API}/api/samsara/gps`);
+        const data = await res.json();
+
+        markers.forEach(m => map.removeLayer(m));
+        markers = [];
+
+        if (!Array.isArray(data)) {
+            document.getElementById("map-status").innerText = "API error";
+            return;
+        }
+
+        data.forEach(truck => {
+            if (!truck.latitude || !truck.longitude) return;
+
+            const marker = L.marker([truck.latitude, truck.longitude])
+                .addTo(map)
+                .bindPopup(
+                    "<b>" + truck.vehicle_id + "</b><br>" +
+                    "Speed: " + truck.speed + " mph<br>" +
+                    "Time: " + truck.time
+                );
+
+            markers.push(marker);
+        });
+
+        document.getElementById("map-status").innerText = "";
+
+    } catch (err) {
+        console.error(err);
+        document.getElementById("map-status").innerText = "Map error";
+    }
+}
+
+window.onload = async function() {
+    await loadDriverDropdown();
+    await loadVehicleDropdown();
+    await loadFleet();
+};
+
+setInterval(loadFleet, 10000);
 </script>
 
 </body>
