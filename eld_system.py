@@ -1298,7 +1298,8 @@ def get_samsara_route(vehicle_id: str, hours: int = 24):
         route = []
 
         for vehicle in data.get("data", []):
-            vehicle_name = vehicle.get("name") or vehicle.get("id")
+            "vehicle_id": vehicle.get("name") or vehicle.get("id"),
+            "samsara_vehicle_id": vehicle.get("id"),
             gps_list = vehicle.get("gps", [])
 
             if isinstance(gps_list, dict):
