@@ -133,13 +133,20 @@ async function loadDrivers() {
 }
 
 async function loadVehicles() {
-    const res = await fetch(`${API}/api/admin/vehicles`);
+    const res = await fetch(`${API}/api/samsara/gps`);
     const data = await res.json();
 
     const select = document.getElementById("vehicleSelect");
     select.innerHTML = "";
 
+    const seen = {};
+
     data.forEach(v => {
+        if (!v.vehicle_id) return;
+        if (seen[v.vehicle_id]) return;
+
+        seen[v.vehicle_id] = true;
+
         const option = document.createElement("option");
         option.value = v.vehicle_id;
         option.textContent = v.vehicle_id;
