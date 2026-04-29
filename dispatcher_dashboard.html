@@ -171,8 +171,9 @@ async function loadVehicles() {
 
 async function assign() {
     const driver = document.getElementById("driverSelect").value;
-    const vehicle = document.getElementById("vehicleSelect").value;
-
+    const select = document.getElementById("vehicleSelect");
+    const vehicleId = select.value;
+    const samsaraId = select.options[select.selectedIndex].dataset.sid;
     const res = await fetch(`${API}/api/assignment/create?driver_id=${driver}&vehicle_id=${vehicle}`, {
         method: "POST"
     });
