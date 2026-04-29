@@ -118,18 +118,30 @@ let markers = [];
 let assignmentMap = {};
 
 async function loadDrivers() {
-    const res = await fetch(`${API}/api/admin/drivers`);
-    const data = await res.json();
+    try {
+        const res = await fetch(`${API}/api/admin/drivers`);
+        const data = await res.json();
 
-    const select = document.getElementById("driverSelect");
-    select.innerHTML = "";
+        console.log("Drivers:", data);  // debug
 
-    data.forEach(d => {
-        const option = document.createElement("option");
-        option.value = d.driver_id;
-        option.textContent = `${d.name} (${d.driver_id})`;
-        select.appendChild(option);
-    });
+        const select = document.getElementById("driverSelect");
+        select.innerHTML = "";
+
+        if (!Array.isArray(data) || data.length === 0) {
+            select.innerHTML = "<option>No drivers found</option>";
+            return;
+        }
+
+        data.forEach(d => {
+            const option = document.createElement("option");
+            option.value = d.driver_id;
+            option.textContent = `${d.name} (${d.driver_id})`;
+            select.appendChild(option);
+        });
+
+    } catch (err) {
+        console.error("Driver load error:", err);
+    }
 }
 
 async function loadVehicles() {
