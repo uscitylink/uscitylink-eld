@@ -192,6 +192,15 @@ class UnassignedEvent(Base):
     assigned = Column(String, default="NO")
     assigned_driver = Column(String, default="")
 
+class VehicleAssignment(Base):
+    __tablename__ = "vehicle_assignments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    driver_id = Column(String)
+    vehicle_id = Column(String)
+    assigned_at = Column(String)
+    active = Column(String, default="YES")
+
 
 Base.metadata.create_all(bind=engine)
 
@@ -1038,3 +1047,48 @@ def download_eld_file():
         media_type="text/plain",
         filename="eld_output_test.txt"
     )
+@app.post("/api/assignment/create")
+def create_assignment(driver_id: str, vehicle_id: str):
+    db = SessionLocal()
+
+    old_assignments = (
+        db.query(VehicleAssignment)
+        .filter(VehicleAssignment.vehicle_id == vehicle_id)
+        .filter(VehicleAssignment.active == "YES")
+        .all()
+    )
+
+    for a in old_assignments:
+        a.active = "NO"
+
+    assignment = VehicleAssignment(
+        driver_id=driver_id,
+        vehicle_id=vehicle_id,
+        assigned_at=now_utc(),
+        active="YES"
+    )
+
+    db.add(assignment)
+    db.commit()
+    db.close()
+
+    return {
+        "message": "Driver assigned to vehicle",
+        "driver_id": driver_id,
+        "vehicle_id": vehicle_id
+    }
+
+
+@app.get("/api/assignment/active")
+def get_active_assignments():
+    db = SessionLocal()
+
+    assignments = (
+        db.query(VehicleAssignment)
+        .filter(VehicleAssignment.active == "YES")
+        .order_by(VehicleAssignment.id.desc())
+        .all()
+    )
+
+    db.close()
+    return assignments

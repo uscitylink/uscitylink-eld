@@ -15,9 +15,7 @@
             padding: 20px;
         }
 
-        h1 {
-            color: #38bdf8;
-        }
+        h1 { color: #38bdf8; }
 
         .panel {
             background: #1e293b;
@@ -28,7 +26,7 @@
 
         select, button {
             padding: 10px;
-            margin-top: 10px;
+            margin: 6px;
             border-radius: 6px;
             border: none;
         }
@@ -50,6 +48,22 @@
             color: #22c55e;
             font-weight: bold;
         }
+
+        table {
+            width: 100%;
+            background: white;
+            color: black;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        th, td {
+            border: 1px solid #999;
+            padding: 8px;
+            font-size: 13px;
+        }
+
+        th { background: #e5e7eb; }
     </style>
 </head>
 
@@ -58,14 +72,31 @@
 <h1>🚛 Dispatcher Dashboard</h1>
 
 <div class="panel">
-    <h3>Assign Driver</h3>
+    <h3>Assign Driver to Vehicle</h3>
 
     <select id="driverSelect"></select>
     <select id="vehicleSelect"></select>
 
-    <button onclick="assign()">Assign Driver to Vehicle</button>
+    <button onclick="assign()">SAVE ASSIGNMENT</button>
 
-    <p id="assignStatus">Assigned →</p>
+    <p id="assignStatus">No assignment yet.</p>
+</div>
+
+<div class="panel">
+    <h3>Active Assignments</h3>
+    <button onclick="loadAssignments()">REFRESH ASSIGNMENTS</button>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Driver ID</th>
+                <th>Vehicle ID</th>
+                <th>Assigned At</th>
+                <th>Active</th>
+            </tr>
+        </thead>
+        <tbody id="assignmentBody"></tbody>
+    </table>
 </div>
 
 <h3>Live Fleet Map</h3>
@@ -84,59 +115,82 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
 }).addTo(map);
 
 let markers = [];
+let assignmentMap = {};
 
-// Load drivers
 async function loadDrivers() {
-    try {
-        const res = await fetch(`${API}/api/admin/drivers`);
-        const data = await res.json();
+    const res = await fetch(`${API}/api/admin/drivers`);
+    const data = await res.json();
 
-        const select = document.getElementById("driverSelect");
-        select.innerHTML = "";
+    const select = document.getElementById("driverSelect");
+    select.innerHTML = "";
 
-        data.forEach(d => {
-            const option = document.createElement("option");
-            option.value = d.driver_id;
-            option.textContent = `${d.name} (${d.driver_id})`;
-            select.appendChild(option);
-        });
-    } catch (err) {
-        console.error("Driver load error:", err);
-    }
+    data.forEach(d => {
+        const option = document.createElement("option");
+        option.value = d.driver_id;
+        option.textContent = `${d.name} (${d.driver_id})`;
+        select.appendChild(option);
+    });
 }
 
-// Load vehicles
 async function loadVehicles() {
-    try {
-        const res = await fetch(`${API}/api/admin/vehicles`);
-        const data = await res.json();
+    const res = await fetch(`${API}/api/admin/vehicles`);
+    const data = await res.json();
 
-        const select = document.getElementById("vehicleSelect");
-        select.innerHTML = "";
+    const select = document.getElementById("vehicleSelect");
+    select.innerHTML = "";
 
-        data.forEach(v => {
-            const option = document.createElement("option");
-            option.value = v.vehicle_id;
-            option.textContent = v.vehicle_id;
-            select.appendChild(option);
-        });
-    } catch (err) {
-        console.error("Vehicle load error:", err);
-    }
+    data.forEach(v => {
+        const option = document.createElement("option");
+        option.value = v.vehicle_id;
+        option.textContent = v.vehicle_id;
+        select.appendChild(option);
+    });
 }
 
-// Simple assignment display
-function assign() {
+async function assign() {
     const driver = document.getElementById("driverSelect").value;
     const vehicle = document.getElementById("vehicleSelect").value;
 
+    const res = await fetch(`${API}/api/assignment/create?driver_id=${driver}&vehicle_id=${vehicle}`, {
+        method: "POST"
+    });
+
+    const data = await res.json();
+
     document.getElementById("assignStatus").textContent =
-        `Assigned ${driver} → ${vehicle}`;
+        data.message + ": " + driver + " → " + vehicle;
+
+    await loadAssignments();
+    await loadFleet();
 }
 
-// Load Samsara trucks
+async function loadAssignments() {
+    const res = await fetch(`${API}/api/assignment/active`);
+    const data = await res.json();
+
+    assignmentMap = {};
+
+    const body = document.getElementById("assignmentBody");
+    body.innerHTML = "";
+
+    data.forEach(a => {
+        assignmentMap[a.vehicle_id] = a.driver_id;
+
+        body.innerHTML += `
+            <tr>
+                <td>${a.driver_id}</td>
+                <td>${a.vehicle_id}</td>
+                <td>${a.assigned_at}</td>
+                <td>${a.active}</td>
+            </tr>
+        `;
+    });
+}
+
 async function loadFleet() {
     try {
+        await loadAssignments();
+
         const res = await fetch(`${API}/api/samsara/gps`);
         const data = await res.json();
 
@@ -146,11 +200,9 @@ async function loadFleet() {
             return;
         }
 
-        // Clear old markers
         markers.forEach(marker => map.removeLayer(marker));
         markers = [];
 
-        // Keep only latest record per truck
         const latest = {};
 
         data.forEach(truck => {
@@ -170,10 +222,9 @@ async function loadFleet() {
             }
         });
 
-        const trucks = Object.values(latest);
         let count = 0;
 
-        trucks.forEach(truck => {
+        Object.values(latest).forEach(truck => {
             const lat = parseFloat(truck.latitude);
             const lon = parseFloat(truck.longitude);
 
@@ -181,10 +232,13 @@ async function loadFleet() {
 
             count++;
 
+            const assignedDriver = assignmentMap[truck.vehicle_id] || "Unassigned";
+
             const marker = L.marker([lat, lon])
                 .addTo(map)
                 .bindPopup(
                     `<b>Truck:</b> ${truck.vehicle_id}<br>
+                     <b>Assigned Driver:</b> ${assignedDriver}<br>
                      <b>Speed:</b> ${truck.speed || 0} mph<br>
                      <b>Time:</b> ${truck.time || ""}<br>
                      <b>GPS:</b> ${lat}, ${lon}`
@@ -202,12 +256,14 @@ async function loadFleet() {
     }
 }
 
-// Start
-loadDrivers();
-loadVehicles();
-loadFleet();
+async function startPage() {
+    await loadDrivers();
+    await loadVehicles();
+    await loadAssignments();
+    await loadFleet();
+}
 
-// Refresh every 10 seconds
+startPage();
 setInterval(loadFleet, 10000);
 </script>
 
