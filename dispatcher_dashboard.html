@@ -339,7 +339,7 @@ function checkAlerts(truck) {
     const vehicleId = truck.vehicle_id;
     const speed = Number(truck.speed || 0);
 
-    if (speed > 70) {
+    if (speed > 75) {
         showAlert(`🚨 SPEEDING: ${vehicleId} is going ${speed} mph`, "red");
     }
 
