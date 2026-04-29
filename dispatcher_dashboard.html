@@ -339,7 +339,7 @@ function checkAlerts(truck) {
     const vehicleId = truck.vehicle_id;
     const speed = Number(truck.speed || 0);
 
-    if (speed > 75) {
+    if (speed > 76) {
         showAlert(`🚨 SPEEDING: ${vehicleId} is going ${speed} mph`, "red");
     }
 
@@ -349,7 +349,7 @@ function checkAlerts(truck) {
         } else {
             const idleSeconds = Math.floor((Date.now() - idleTracker[vehicleId]) / 1000);
 
-            if (idleSeconds > 120) {
+            if (idleSeconds > 3600) {
                 showAlert(`⚠️ IDLE: ${vehicleId} has been idle for ${idleSeconds} seconds`, "yellow");
             }
         }
