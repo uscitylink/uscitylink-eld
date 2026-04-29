@@ -1092,3 +1092,50 @@ def get_active_assignments():
 
     db.close()
     return assignments
+
+
+@app.post("/api/assignment/create")
+def create_assignment(driver_id: str, vehicle_id: str):
+    db = SessionLocal()
+
+    old_assignments = (
+        db.query(VehicleAssignment)
+        .filter(VehicleAssignment.vehicle_id == vehicle_id)
+        .filter(VehicleAssignment.active == "YES")
+        .all()
+    )
+
+    for a in old_assignments:
+        a.active = "NO"
+
+    assignment = VehicleAssignment(
+        driver_id=driver_id,
+        vehicle_id=vehicle_id,
+        assigned_at=now_utc(),
+        active="YES"
+    )
+
+    db.add(assignment)
+    db.commit()
+    db.close()
+
+    return {
+        "message": "Driver assigned to vehicle",
+        "driver_id": driver_id,
+        "vehicle_id": vehicle_id
+    }
+
+
+@app.get("/api/assignment/active")
+def get_active_assignments():
+    db = SessionLocal()
+
+    assignments = (
+        db.query(VehicleAssignment)
+        .filter(VehicleAssignment.active == "YES")
+        .order_by(VehicleAssignment.id.desc())
+        .all()
+    )
+
+    db.close()
+    return assignments
