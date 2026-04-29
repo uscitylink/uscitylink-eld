@@ -909,8 +909,9 @@ def fleet_route(vehicle_id: str):
 def get_samsara_gps():
     token = os.environ.get("SAMSARA_API_TOKEN")
 
-    if not token:
-        return {"error": "SAMSARA_API_TOKEN not set"}
+    if token:
+        token = token.strip()
+        token = token.replace("Bearer ", "").replace("bearer ", "")
 
     url = "https://api.samsara.com/fleet/vehicles/stats"
 
