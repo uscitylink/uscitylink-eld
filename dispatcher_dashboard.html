@@ -297,7 +297,9 @@ let routeLine = null;
 let routeMarkers = [];
 
 async function showRoute() {
-    const vehicleId = document.getElementById("vehicleSelect").value;
+    const select = document.getElementById("vehicleSelect");
+    const vehicleId = select.value;
+    const samsaraId = select.options[select.selectedIndex].dataset.sid;
 
     if (!vehicleId) {
         alert("Select vehicle first");
@@ -312,7 +314,7 @@ async function showRoute() {
         routeLine = null;
     }
 
-    const res = await fetch(`${API}/api/samsara/route?vehicle_id=${encodeURIComponent(vehicleId)}&hours=24`);
+    const res = await fetch(`${API}/api/samsara/route?vehicle_id=${samsaraId}&hours=24`)
     const data = await res.json();
 
     if (!Array.isArray(data)) {
