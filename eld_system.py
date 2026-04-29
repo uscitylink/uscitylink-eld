@@ -1257,3 +1257,63 @@ def import_samsara_drivers():
 
     except Exception as e:
         return {"error": str(e)}
+
+@app.get("/api/samsara/route")
+def get_samsara_route(vehicle_id: str, hours: int = 24):
+    token = os.environ.get("SAMSARA_API_TOKEN")
+
+    if not token:
+        return {"error": "SAMSARA_API_TOKEN not set"}
+
+    url = "https://api.samsara.com/fleet/vehicles/stats/history"
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json"
+    }
+
+    end_time = datetime.utcnow()
+    start_time = end_time.timestamp() - (hours * 60 * 60)
+    start_dt = datetime.utcfromtimestamp(start_time).isoformat() + "Z"
+    end_dt = end_time.isoformat() + "Z"
+
+    params = {
+        "types": "gps",
+        "vehicleIds": vehicle_id,
+        "startTime": start_dt,
+        "endTime": end_dt
+    }
+
+    try:
+        res = requests.get(url, headers=headers, params=params, timeout=30)
+
+        if res.status_code != 200:
+            return {
+                "error": "Samsara route API error",
+                "status_code": res.status_code,
+                "response": res.text
+            }
+
+        data = res.json()
+        route = []
+
+        for vehicle in data.get("data", []):
+            vehicle_name = vehicle.get("name") or vehicle.get("id")
+            gps_list = vehicle.get("gps", [])
+
+            if isinstance(gps_list, dict):
+                gps_list = [gps_list]
+
+            for gps in gps_list:
+                route.append({
+                    "vehicle_id": vehicle_name,
+                    "latitude": gps.get("latitude"),
+                    "longitude": gps.get("longitude"),
+                    "speed": gps.get("speedMilesPerHour", 0),
+                    "time": gps.get("time")
+                })
+
+        return route
+
+    except Exception as e:
+        return {"error": str(e)}
