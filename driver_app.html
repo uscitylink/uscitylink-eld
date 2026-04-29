@@ -1,812 +1,127 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>US Citylink ELD Driver App</title>
+    <title>US Citylink ELD Driver App</title>
 
-<style>
-body {
-    background: #0f172a;
-    color: white;
-    font-family: Arial;
-    padding: 25px;
-}
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-.card {
-    background: #1e293b;
-    padding: 25px;
-    border-radius: 12px;
-    max-width: 1050px;
-}
+    <!-- Leaflet -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
-h1 {
-    color: #38bdf8;
-}
+    <style>
+        body {
+            font-family: Arial;
+            background: #0f172a;
+            color: white;
+            margin: 0;
+            padding: 20px;
+        }
 
-input, select {
-    padding: 10px;
-    width: 260px;
-    margin-bottom: 12px;
-    border-radius: 6px;
-    border: none;
-}
+        h1 {
+            color: #38bdf8;
+        }
 
-button {
-    padding: 13px 18px;
-    margin: 6px;
-    border: none;
-    border-radius: 8px;
-    color: white;
-    font-size: 16px;
-    cursor: pointer;
-}
+        #map {
+            height: 500px;
+            margin-top: 20px;
+            border-radius: 10px;
+        }
 
-button:hover {
-    opacity: 0.85;
-}
+        .box {
+            background: #1e293b;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
 
-.btn-login { background: #111827; }
-.btn-on { background: #2563eb; }
-.btn-off { background: #dc2626; }
-.btn-sb { background: #9333ea; }
-.btn-main { background: #f59e0b; }
-.btn-speed { background: #16a34a; }
-.btn-edit { background: #0ea5e9; padding: 8px 12px; font-size: 13px; }
-.btn-certify { background: #22c55e; }
-.btn-logout { background: #dc2626; }
-.btn-disabled { background: #6b7280; padding: 8px 12px; font-size: 13px; cursor: not-allowed; }
-
-.box {
-    background: #0f172a;
-    padding: 15px;
-    border-radius: 8px;
-    margin-top: 10px;
-}
-
-#status {
-    font-size: 28px;
-    font-weight: bold;
-    color: #22c55e;
-}
-
-#hos {
-    font-size: 18px;
-    line-height: 1.7;
-}
-
-#violationBox {
-    display: none;
-    background: #7f1d1d;
-    color: white;
-    padding: 15px;
-    border-radius: 8px;
-    margin-top: 12px;
-    font-size: 20px;
-    font-weight: bold;
-}
-
-pre {
-    background: black;
-    color: #22c55e;
-    padding: 15px;
-    border-radius: 8px;
-    white-space: pre-wrap;
-}
-
-.log-grid {
-    background: white;
-    color: black;
-    padding: 12px;
-    border-radius: 8px;
-    overflow-x: auto;
-}
-
-.log-row {
-    display: flex;
-    align-items: center;
-    height: 42px;
-    border-bottom: 1px solid #ddd;
-    font-size: 13px;
-}
-
-.log-label {
-    width: 70px;
-    font-weight: bold;
-}
-
-.timeline {
-    position: relative;
-    width: 720px;
-    height: 30px;
-    background: repeating-linear-gradient(
-        to right,
-        #f3f4f6 0px,
-        #f3f4f6 29px,
-        #d1d5db 30px
-    );
-    border: 1px solid #9ca3af;
-}
-
-.segment {
-    position: absolute;
-    height: 22px;
-    top: 4px;
-    border-radius: 3px;
-}
-
-.off { background: #dc2626; }
-.sb { background: #9333ea; }
-.driving { background: #16a34a; }
-.on { background: #2563eb; }
-.edit { background: #0ea5e9; }
-.violation-segment { background: #991b1b; }
-
-.hours {
-    display: flex;
-    margin-left: 70px;
-    width: 720px;
-    color: black;
-    font-size: 11px;
-}
-
-.hour {
-    width: 30px;
-    text-align: center;
-}
-
-.event-table {
-    width: 100%;
-    border-collapse: collapse;
-    background: white;
-    color: black;
-    margin-top: 15px;
-}
-
-.event-table th,
-.event-table td {
-    border: 1px solid #999;
-    padding: 8px;
-    font-size: 13px;
-}
-
-.event-table th {
-    background: #e5e7eb;
-}
-
-.edit-panel {
-    background: #111827;
-    border: 1px solid #38bdf8;
-    padding: 15px;
-    border-radius: 8px;
-    margin-top: 15px;
-}
-
-.edit-panel h3 {
-    margin-top: 0;
-    color: #38bdf8;
-}
-
-.small-note {
-    color: #cbd5e1;
-    font-size: 14px;
-}
-</style>
+        button {
+            padding: 10px;
+            border-radius: 6px;
+            border: none;
+            background: #22c55e;
+            color: white;
+            cursor: pointer;
+        }
+    </style>
 </head>
 
 <body>
 
-<div class="card">
-
 <h1>US Citylink ELD Driver App</h1>
 
-<button class="btn-logout" onclick="doLogout()">LOGOUT</button>
-<p id="user_info"></p>
-
-<p>Driver:</p>
-<select id="driver_id"></select>
-
-<p>Vehicle:</p>
-<select id="vehicle_id"></select>
-
-<p>Latitude:</p>
-<input id="latitude" value="35.3733">
-
-<p>Longitude:</p>
-<input id="longitude" value="-119.0187">
-
-<p>Odometer:</p>
-<input id="odometer" value="85600">
-
-<p>Engine Hours:</p>
-<input id="engine_hours" value="14">
-
-<p>Speed MPH:</p>
-<input id="speed" value="0">
-
-<h2>Current Status</h2>
 <div class="box">
-    <div id="status">Not Loaded</div>
+    <h3>Current Driver Status</h3>
+    <p id="status">LIVE GPS CONNECTED</p>
 </div>
 
-<h2>HOS Timer</h2>
-<div class="box">
-    <div id="hos">Not Loaded</div>
-    <div id="violationBox"></div>
-    <button class="btn-main" onclick="loadHOS()">REFRESH HOS</button>
-</div>
+<button onclick="loadFleet()">Refresh</button>
 
-<h2>DOT Logbook Graph</h2>
-<div class="box">
-    <div class="log-grid">
-        <div class="hours" id="hours"></div>
+<h3>Fleet Map + Route History</h3>
 
-        <div class="log-row">
-            <div class="log-label">OFF</div>
-            <div class="timeline" id="row-off"></div>
-        </div>
+<div id="map"></div>
 
-        <div class="log-row">
-            <div class="log-label">SB</div>
-            <div class="timeline" id="row-sb"></div>
-        </div>
+<p id="map-status" style="color:red;"></p>
 
-        <div class="log-row">
-            <div class="log-label">DR</div>
-            <div class="timeline" id="row-driving"></div>
-        </div>
-
-        <div class="log-row">
-            <div class="log-label">ON</div>
-            <div class="timeline" id="row-on"></div>
-        </div>
-
-        <table class="event-table">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Time</th>
-                    <th>Status</th>
-                    <th>Origin</th>
-                    <th>Speed</th>
-                    <th>Odometer</th>
-                    <th>Engine Hours</th>
-                    <th>Edit</th>
-                </tr>
-            </thead>
-            <tbody id="event-table-body"></tbody>
-        </table>
-    </div>
-
-    <button class="btn-main" onclick="loadLogbook()">REFRESH LOGBOOK</button>
-</div>
-
-<h2>Edit Log</h2>
-<div class="box">
-    <div class="edit-panel">
-        <h3>Edit Selected Event</h3>
-
-        <p>Event ID:</p>
-        <input id="edit_event_id" placeholder="Click EDIT on a row" readonly>
-
-        <p>New Status:</p>
-        <select id="edit_new_status">
-            <option value="OFF">OFF DUTY</option>
-            <option value="SB">SLEEPER BERTH</option>
-            <option value="ON">ON DUTY</option>
-        </select>
-
-        <p>Reason / Annotation:</p>
-        <input id="edit_reason" placeholder="Example: Correcting duty status mistake">
-
-        <br>
-        <button class="btn-edit" onclick="submitEdit()">SAVE EDIT</button>
-
-        <p class="small-note">
-            DRIVING events cannot be edited. Original records stay saved.
-        </p>
-    </div>
-
-    <h3>Edit History</h3>
-    <table class="event-table">
-        <thead>
-            <tr>
-                <th>Original ID</th>
-                <th>New ID</th>
-                <th>Old</th>
-                <th>New</th>
-                <th>Reason</th>
-                <th>Edited At</th>
-            </tr>
-        </thead>
-        <tbody id="edit-history-body"></tbody>
-    </table>
-
-    <button class="btn-main" onclick="loadEditHistory()">REFRESH EDIT HISTORY</button>
-</div>
-
-<h2>Driver Certification</h2>
-<div class="box">
-    <p>Log Date:</p>
-    <input id="cert_date">
-
-    <p>Certification Note:</p>
-    <input id="cert_note" value="I certify that today's log is true and correct.">
-
-    <br>
-    <button class="btn-certify" onclick="certifyLog()">CERTIFY TODAY'S LOG</button>
-
-    <h3>Certification History</h3>
-    <table class="event-table">
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>Driver</th>
-                <th>Log Date</th>
-                <th>Certified At</th>
-                <th>Note</th>
-            </tr>
-        </thead>
-        <tbody id="cert-history-body"></tbody>
-    </table>
-
-    <button class="btn-main" onclick="loadCertifications()">REFRESH CERTIFICATIONS</button>
-</div>
-
-<h2>Driver</h2>
-<button class="btn-login" onclick="login()">LOGIN</button>
-<button class="btn-login" onclick="logoutDriver()">LOGOUT DRIVER</button>
-
-<h2>Duty Status</h2>
-<button class="btn-on" onclick="send('ON')">ON DUTY</button>
-<button class="btn-off" onclick="send('OFF')">OFF DUTY</button>
-<button class="btn-sb" onclick="send('SB')">SLEEPER BERTH</button>
-
-<h2>Fake Vehicle Telemetry</h2>
-<button class="btn-speed" onclick="sendTelemetry()">SEND SPEED / GPS</button>
-<p>Set speed above 5 mph to auto-create DRIVING.</p>
-
-<h2>DOT / Roadside</h2>
-<button class="btn-main" onclick="inspectionMode()">INSPECTION MODE</button>
-<button class="btn-main" onclick="downloadFile()">DOWNLOAD ELD FILE</button>
-
-<h2>Result</h2>
-<pre id="result"></pre>
-
-</div>
+<!-- Leaflet -->
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
-const API = window.location.origin;
-let currentViolation = false;
 
-if (!localStorage.getItem("eld_role")) {
-    window.location.href = "/app/login.html";
-}
+    // Create map
+    var map = L.map('map').setView([36, -119], 6);
 
-function doLogout() {
-    localStorage.clear();
-    window.location.href = "/app/login.html";
-}
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap'
+    }).addTo(map);
 
-function showUserInfo() {
-    document.getElementById("user_info").textContent =
-        "Logged in as: " + localStorage.getItem("eld_username") +
-        " (" + localStorage.getItem("eld_role") + ")";
-}
+    // Store markers
+    let markers = [];
 
-function driver() {
-    return document.getElementById("driver_id").value;
-}
+    // Load Samsara GPS
+    async function loadFleet() {
+        try {
+            const res = await fetch("https://uscitylink-eld.onrender.com/api/samsara/gps");
+            const data = await res.json();
 
-function vehicle() {
-    return document.getElementById("vehicle_id").value;
-}
+            console.log(data);
 
-function setTodayDate() {
-    const today = new Date().toISOString().slice(0, 10);
-    document.getElementById("cert_date").value = today;
-}
+            // Clear old markers
+            markers.forEach(m => map.removeLayer(m));
+            markers = [];
 
-async function loadDriverDropdown() {
-    const response = await fetch(`${API}/api/admin/drivers`);
-    const drivers = await response.json();
-
-    const select = document.getElementById("driver_id");
-    select.innerHTML = "";
-
-    drivers.forEach(d => {
-        select.innerHTML += `
-            <option value="${d.driver_id}">
-                ${d.name} (${d.driver_id})
-            </option>
-        `;
-    });
-
-    if (localStorage.getItem("eld_role") === "DRIVER") {
-        const savedDriver = localStorage.getItem("eld_driver_id");
-        if (savedDriver) {
-            select.value = savedDriver;
-            select.disabled = true;
-        }
-    }
-}
-
-async function loadVehicleDropdown() {
-    const response = await fetch(`${API}/api/admin/vehicles`);
-    const vehicles = await response.json();
-
-    const select = document.getElementById("vehicle_id");
-    select.innerHTML = "";
-
-    vehicles.forEach(v => {
-        select.innerHTML += `
-            <option value="${v.vehicle_id}">
-                ${v.vehicle_id} - ${v.plate || ""}
-            </option>
-        `;
-    });
-}
-
-function clearLogRows() {
-    document.getElementById("row-off").innerHTML = "";
-    document.getElementById("row-sb").innerHTML = "";
-    document.getElementById("row-driving").innerHTML = "";
-    document.getElementById("row-on").innerHTML = "";
-}
-
-function statusToRow(status) {
-    if (status === "OFF") return "row-off";
-    if (status === "SB") return "row-sb";
-    if (status === "DRIVING") return "row-driving";
-    if (status === "ON") return "row-on";
-    return "row-off";
-}
-
-function statusToClass(status, origin) {
-    if (currentViolation === true) return "violation-segment";
-    if (origin === "EDIT") return "edit";
-    if (status === "OFF") return "off";
-    if (status === "SB") return "sb";
-    if (status === "DRIVING") return "driving";
-    if (status === "ON") return "on";
-    return "off";
-}
-
-function minutesFromMidnight(dateString) {
-    const d = new Date(dateString);
-    return d.getHours() * 60 + d.getMinutes();
-}
-
-function buildHours() {
-    let html = "";
-    for (let i = 0; i <= 24; i++) {
-        html += `<div class="hour">${i}</div>`;
-    }
-    document.getElementById("hours").innerHTML = html;
-}
-
-function selectEventForEdit(id, status) {
-    if (status === "DRIVING") {
-        alert("DRIVING events cannot be edited.");
-        return;
-    }
-
-    document.getElementById("edit_event_id").value = id;
-    document.getElementById("edit_new_status").value = status;
-    document.getElementById("edit_reason").focus();
-}
-
-async function submitEdit() {
-    const eventId = document.getElementById("edit_event_id").value;
-    const newStatus = document.getElementById("edit_new_status").value;
-    const reason = document.getElementById("edit_reason").value;
-
-    if (!eventId) {
-        alert("Select an event first by clicking EDIT.");
-        return;
-    }
-
-    if (!reason.trim()) {
-        alert("Reason is required.");
-        return;
-    }
-
-    const url = `${API}/api/eld/edit-event?event_id=${eventId}&new_status=${newStatus}&reason=${encodeURIComponent(reason)}`;
-
-    const response = await fetch(url, { method: "POST" });
-    const data = await response.json();
-
-    document.getElementById("result").textContent = JSON.stringify(data, null, 2);
-
-    document.getElementById("edit_event_id").value = "";
-    document.getElementById("edit_reason").value = "";
-
-    loadStatus();
-    loadHOS();
-    loadLogbook();
-    loadEditHistory();
-}
-
-async function certifyLog() {
-    const logDate = document.getElementById("cert_date").value;
-    const note = document.getElementById("cert_note").value;
-
-    if (!logDate) {
-        alert("Log date is required.");
-        return;
-    }
-
-    if (!note.trim()) {
-        alert("Certification note is required.");
-        return;
-    }
-
-    const url = `${API}/api/eld/certify?driver_id=${driver()}&log_date=${logDate}&note=${encodeURIComponent(note)}`;
-
-    const response = await fetch(url, { method: "POST" });
-    const data = await response.json();
-
-    document.getElementById("result").textContent = JSON.stringify(data, null, 2);
-
-    loadCertifications();
-}
-
-async function send(status) {
-    const lat = document.getElementById("latitude").value;
-    const lon = document.getElementById("longitude").value;
-    const odo = document.getElementById("odometer").value;
-    const eng = document.getElementById("engine_hours").value;
-
-    const url = `${API}/api/eld/event?driver_id=${driver()}&vehicle_id=${vehicle()}&duty_status=${status}&latitude=${lat}&longitude=${lon}&odometer=${odo}&engine_hours=${eng}`;
-
-    const response = await fetch(url, { method: "POST" });
-    const data = await response.json();
-
-    document.getElementById("result").textContent = JSON.stringify(data, null, 2);
-
-    loadStatus();
-    loadHOS();
-    loadLogbook();
-}
-
-async function sendTelemetry() {
-    const speed = document.getElementById("speed").value;
-    const lat = document.getElementById("latitude").value;
-    const lon = document.getElementById("longitude").value;
-    const odo = document.getElementById("odometer").value;
-    const eng = document.getElementById("engine_hours").value;
-
-    const url = `${API}/api/vehicle/telemetry?driver_id=${driver()}&vehicle_id=${vehicle()}&speed=${speed}&latitude=${lat}&longitude=${lon}&odometer=${odo}&engine_hours=${eng}`;
-
-    const response = await fetch(url, { method: "POST" });
-    const data = await response.json();
-
-    document.getElementById("result").textContent = JSON.stringify(data, null, 2);
-
-    loadStatus();
-    loadHOS();
-    loadLogbook();
-}
-
-async function login() {
-    const response = await fetch(`${API}/api/driver/login?driver_id=${driver()}`, { method: "POST" });
-    const data = await response.json();
-    document.getElementById("result").textContent = JSON.stringify(data, null, 2);
-}
-
-async function logoutDriver() {
-    const response = await fetch(`${API}/api/driver/logout?driver_id=${driver()}`, { method: "POST" });
-    const data = await response.json();
-    document.getElementById("result").textContent = JSON.stringify(data, null, 2);
-}
-
-async function loadStatus() {
-    try {
-        const response = await fetch(`${API}/api/driver/current-status?driver_id=${driver()}`);
-        const data = await response.json();
-
-        if (data.current_status) {
-            document.getElementById("status").textContent =
-                data.current_status + " (" + (data.event_origin || "N/A") + ")";
-        }
-    } catch (error) {
-        document.getElementById("status").textContent = "Backend Not Connected";
-    }
-}
-
-async function loadHOS() {
-    try {
-        const response = await fetch(`${API}/api/hos/summary?driver_id=${driver()}`);
-        const data = await response.json();
-
-        currentViolation = data.violation;
-
-        document.getElementById("hos").innerHTML = `
-            Driving Used: ${data.driving_hours} hrs<br>
-            Shift Used: ${data.shift_hours} hrs<br><br>
-
-            Driving Left: ${data.driving_remaining} hrs / 11 hrs<br>
-            Shift Left: ${data.shift_remaining} hrs / 14 hrs<br><br>
-
-            <b style="color:${data.violation ? 'red' : '#22c55e'}; font-size:18px;">
-            ${data.violation ? '⚠ VIOLATION: ' + data.violation_message : 'OK'}
-            </b>
-        `;
-
-        const violationBox = document.getElementById("violationBox");
-
-        if (data.violation) {
-            violationBox.style.display = "block";
-            violationBox.textContent = "⚠ HOS VIOLATION: " + data.violation_message;
-        } else {
-            violationBox.style.display = "none";
-            violationBox.textContent = "";
-        }
-
-    } catch (error) {
-        document.getElementById("hos").textContent = "Backend Not Connected";
-    }
-}
-
-async function loadLogbook() {
-    try {
-        clearLogRows();
-
-        const response = await fetch(`${API}/api/eld/events?driver_id=${driver()}`);
-        const events = await response.json();
-
-        const tableBody = document.getElementById("event-table-body");
-        tableBody.innerHTML = "";
-
-        events.forEach(e => {
-            const d = new Date(e.event_time);
-            const time = d.toLocaleTimeString();
-
-            let editButton = "";
-
-            if (e.duty_status === "DRIVING") {
-                editButton = `<button class="btn-disabled" disabled>NO EDIT</button>`;
-            } else {
-                editButton = `<button class="btn-edit" onclick="selectEventForEdit(${e.id}, '${e.duty_status}')">EDIT</button>`;
+            if (!Array.isArray(data)) {
+                document.getElementById("map-status").innerText = "API error";
+                return;
             }
 
-            tableBody.innerHTML += `
-                <tr>
-                    <td>${e.id}</td>
-                    <td>${time}</td>
-                    <td>${e.duty_status}</td>
-                    <td>${e.event_origin || ""}</td>
-                    <td>${e.speed || 0}</td>
-                    <td>${e.odometer || ""}</td>
-                    <td>${e.engine_hours || ""}</td>
-                    <td>${editButton}</td>
-                </tr>
-            `;
-        });
+            data.forEach(truck => {
+                if (!truck.latitude || !truck.longitude) return;
 
-        if (events.length === 0) {
-            return;
+                const marker = L.marker([truck.latitude, truck.longitude])
+                    .addTo(map)
+                    .bindPopup(
+                        "<b>" + truck.vehicle_id + "</b><br>" +
+                        "Speed: " + truck.speed + " mph<br>" +
+                        "Time: " + truck.time
+                    );
+
+                markers.push(marker);
+            });
+
+            document.getElementById("map-status").innerText = "";
+
+        } catch (err) {
+            console.error(err);
+            document.getElementById("map-status").innerText = "Map error";
         }
-
-        for (let i = 0; i < events.length; i++) {
-            const current = events[i];
-            const next = events[i + 1];
-
-            const startMin = minutesFromMidnight(current.event_time);
-            let endMin;
-
-            if (next) {
-                endMin = minutesFromMidnight(next.event_time);
-            } else {
-                const now = new Date();
-                endMin = now.getHours() * 60 + now.getMinutes();
-            }
-
-            if (endMin < startMin) {
-                endMin = 1440;
-            }
-
-            const leftPercent = (startMin / 1440) * 100;
-            const widthPercent = ((endMin - startMin) / 1440) * 100;
-
-            const rowId = statusToRow(current.duty_status);
-            const className = statusToClass(current.duty_status, current.event_origin);
-
-            const segment = document.createElement("div");
-            segment.className = `segment ${className}`;
-            segment.style.left = leftPercent + "%";
-            segment.style.width = Math.max(widthPercent, 0.5) + "%";
-            segment.title = `${current.duty_status} ${current.event_time}`;
-
-            document.getElementById(rowId).appendChild(segment);
-        }
-    } catch (error) {
-        console.log("Logbook error", error);
     }
-}
 
-async function loadEditHistory() {
-    try {
-        const response = await fetch(`${API}/api/eld/edits?driver_id=${driver()}`);
-        const edits = await response.json();
+    // Run on load
+    loadFleet();
 
-        const body = document.getElementById("edit-history-body");
-        body.innerHTML = "";
+    // Auto refresh every 10 sec
+    setInterval(loadFleet, 10000);
 
-        edits.forEach(edit => {
-            const d = new Date(edit.edited_at);
-
-            body.innerHTML += `
-                <tr>
-                    <td>${edit.original_event_id}</td>
-                    <td>${edit.new_event_id}</td>
-                    <td>${edit.old_status}</td>
-                    <td>${edit.new_status}</td>
-                    <td>${edit.reason}</td>
-                    <td>${d.toLocaleString()}</td>
-                </tr>
-            `;
-        });
-    } catch (error) {
-        console.log("Edit history error", error);
-    }
-}
-
-async function loadCertifications() {
-    try {
-        const response = await fetch(`${API}/api/eld/certifications?driver_id=${driver()}`);
-        const certs = await response.json();
-
-        const body = document.getElementById("cert-history-body");
-        body.innerHTML = "";
-
-        certs.forEach(cert => {
-            const d = new Date(cert.certified_at);
-
-            body.innerHTML += `
-                <tr>
-                    <td>${cert.id}</td>
-                    <td>${cert.driver_id}</td>
-                    <td>${cert.log_date}</td>
-                    <td>${d.toLocaleString()}</td>
-                    <td>${cert.note}</td>
-                </tr>
-            `;
-        });
-    } catch (error) {
-        console.log("Certification error", error);
-    }
-}
-
-async function inspectionMode() {
-    const response = await fetch(`${API}/api/eld/output-file`);
-    const data = await response.text();
-
-    document.getElementById("result").textContent = data;
-}
-
-function downloadFile() {
-    window.open(`${API}/api/eld/download`, "_blank");
-}
-
-window.onload = async function() {
-    showUserInfo();
-    setTodayDate();
-    buildHours();
-
-    await loadDriverDropdown();
-    await loadVehicleDropdown();
-
-    loadStatus();
-    loadHOS();
-    loadLogbook();
-    loadEditHistory();
-    loadCertifications();
-};
-
-setInterval(loadStatus, 3000);
-setInterval(loadHOS, 5000);
-setInterval(loadLogbook, 5000);
-setInterval(loadEditHistory, 8000);
-setInterval(loadCertifications, 10000);
 </script>
 
 </body>
