@@ -2,7 +2,6 @@
 <html>
 <head>
     <title>Dispatcher Dashboard</title>
-
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
@@ -18,12 +17,6 @@
 
         h1 {
             color: #38bdf8;
-        }
-
-        #map {
-            height: 500px;
-            margin-top: 20px;
-            border-radius: 10px;
         }
 
         .panel {
@@ -45,6 +38,18 @@
             color: white;
             cursor: pointer;
         }
+
+        #map {
+            height: 520px;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+
+        #mapStatus {
+            margin-top: 10px;
+            color: #22c55e;
+            font-weight: bold;
+        }
     </style>
 </head>
 
@@ -60,104 +65,150 @@
 
     <button onclick="assign()">Assign Driver to Vehicle</button>
 
-    <p id="assignStatus"></p>
+    <p id="assignStatus">Assigned →</p>
 </div>
 
 <h3>Live Fleet Map</h3>
 <div id="map"></div>
+<p id="mapStatus">Loading trucks...</p>
 
-<!-- Leaflet -->
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
+const API = window.location.origin;
 
-const API = "https://uscitylink-eld.onrender.com";
+let map = L.map("map").setView([39.5, -98.35], 5);
 
-// Map
-var map = L.map('map').setView([36, -119], 6);
-
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap'
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "© OpenStreetMap"
 }).addTo(map);
 
 let markers = [];
 
 // Load drivers
 async function loadDrivers() {
-    const res = await fetch(`${API}/api/admin/drivers`);
-    const data = await res.json();
+    try {
+        const res = await fetch(`${API}/api/admin/drivers`);
+        const data = await res.json();
 
-    let select = document.getElementById("driverSelect");
-    select.innerHTML = "";
+        const select = document.getElementById("driverSelect");
+        select.innerHTML = "";
 
-    data.forEach(d => {
-        let opt = document.createElement("option");
-        opt.value = d.driver_id;
-        opt.text = d.name + " (" + d.driver_id + ")";
-        select.appendChild(opt);
-    });
+        data.forEach(d => {
+            const option = document.createElement("option");
+            option.value = d.driver_id;
+            option.textContent = `${d.name} (${d.driver_id})`;
+            select.appendChild(option);
+        });
+    } catch (err) {
+        console.error("Driver load error:", err);
+    }
 }
 
 // Load vehicles
 async function loadVehicles() {
-    const res = await fetch(`${API}/api/admin/vehicles`);
-    const data = await res.json();
+    try {
+        const res = await fetch(`${API}/api/admin/vehicles`);
+        const data = await res.json();
 
-    let select = document.getElementById("vehicleSelect");
-    select.innerHTML = "";
+        const select = document.getElementById("vehicleSelect");
+        select.innerHTML = "";
 
-    data.forEach(v => {
-        let opt = document.createElement("option");
-        opt.value = v.vehicle_id;
-        opt.text = v.vehicle_id;
-        select.appendChild(opt);
-    });
+        data.forEach(v => {
+            const option = document.createElement("option");
+            option.value = v.vehicle_id;
+            option.textContent = v.vehicle_id;
+            select.appendChild(option);
+        });
+    } catch (err) {
+        console.error("Vehicle load error:", err);
+    }
 }
 
-// Assign (simple display)
+// Simple assignment display
 function assign() {
     const driver = document.getElementById("driverSelect").value;
     const vehicle = document.getElementById("vehicleSelect").value;
 
-    document.getElementById("assignStatus").innerText =
-        "Assigned " + driver + " → " + vehicle;
+    document.getElementById("assignStatus").textContent =
+        `Assigned ${driver} → ${vehicle}`;
 }
 
-// Load Samsara GPS
+// Load Samsara trucks
 async function loadFleet() {
     try {
         const res = await fetch(`${API}/api/samsara/gps`);
         const data = await res.json();
 
-        markers.forEach(m => map.removeLayer(m));
+        if (!Array.isArray(data)) {
+            document.getElementById("mapStatus").textContent =
+                "API error: " + JSON.stringify(data);
+            return;
+        }
+
+        // Clear old markers
+        markers.forEach(marker => map.removeLayer(marker));
         markers = [];
 
-        data.forEach(truck => {
-            if (!truck.latitude || !truck.longitude) return;
+        // Keep only latest record per truck
+        const latest = {};
 
-            const marker = L.marker([truck.latitude, truck.longitude])
+        data.forEach(truck => {
+            if (!truck.vehicle_id || !truck.latitude || !truck.longitude) return;
+
+            const id = truck.vehicle_id;
+
+            if (!latest[id]) {
+                latest[id] = truck;
+            } else {
+                const oldTime = new Date(latest[id].time || 0);
+                const newTime = new Date(truck.time || 0);
+
+                if (newTime > oldTime) {
+                    latest[id] = truck;
+                }
+            }
+        });
+
+        const trucks = Object.values(latest);
+        let count = 0;
+
+        trucks.forEach(truck => {
+            const lat = parseFloat(truck.latitude);
+            const lon = parseFloat(truck.longitude);
+
+            if (isNaN(lat) || isNaN(lon)) return;
+
+            count++;
+
+            const marker = L.marker([lat, lon])
                 .addTo(map)
                 .bindPopup(
-                    "<b>" + truck.vehicle_id + "</b><br>" +
-                    "Speed: " + truck.speed + " mph"
+                    `<b>Truck:</b> ${truck.vehicle_id}<br>
+                     <b>Speed:</b> ${truck.speed || 0} mph<br>
+                     <b>Time:</b> ${truck.time || ""}<br>
+                     <b>GPS:</b> ${lat}, ${lon}`
                 );
 
             markers.push(marker);
         });
 
+        document.getElementById("mapStatus").textContent =
+            `Showing latest location for ${count} truck(s).`;
+
     } catch (err) {
-        console.error(err);
+        console.error("Fleet map error:", err);
+        document.getElementById("mapStatus").textContent = "Map error.";
     }
 }
 
-// Load everything
+// Start
 loadDrivers();
 loadVehicles();
 loadFleet();
 
-// Auto refresh
+// Refresh every 10 seconds
 setInterval(loadFleet, 10000);
-
 </script>
 
 </body>
