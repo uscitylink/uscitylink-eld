@@ -1297,22 +1297,22 @@ def get_samsara_route(vehicle_id: str, hours: int = 24):
         data = res.json()
         route = []
 
-    for vehicle in data.get("data", []):
-    vehicle_name = vehicle.get("name") or vehicle.get("id")
-    gps_list = vehicle.get("gps", [])
+        for vehicle in data.get("data", []):
+            vehicle_name = vehicle.get("name") or vehicle.get("id")
+            gps_list = vehicle.get("gps", [])
 
-    if isinstance(gps_list, dict):
-        gps_list = [gps_list]
+            if isinstance(gps_list, dict):
+                gps_list = [gps_list]
 
-    for gps in gps_list:
-        route.append({
-            "vehicle_id": vehicle_name,
-            "samsara_vehicle_id": vehicle.get("id"),
-            "latitude": gps.get("latitude"),
-            "longitude": gps.get("longitude"),
-            "speed": gps.get("speedMilesPerHour", 0),
-            "time": gps.get("time")
-        })
+            for gps in gps_list:
+                route.append({
+                    "vehicle_id": vehicle_name,
+                    "samsara_vehicle_id": vehicle.get("id"),
+                    "latitude": gps.get("latitude"),
+                    "longitude": gps.get("longitude"),
+                    "speed": gps.get("speedMilesPerHour", 0),
+                    "time": gps.get("time")
+                })
 
         return route
 
