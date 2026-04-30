@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>US Citylink ELD Driver App</title>
+    <title>US Citylink Driver ELD App</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
     <style>
@@ -11,179 +12,953 @@
             background: #0f172a;
             color: white;
             margin: 0;
-            padding: 20px;
+            padding: 18px;
         }
 
-        h1 { color: #38bdf8; }
+        h1 {
+            color: #38bdf8;
+        }
+
+        h2, h3 {
+            margin-bottom: 8px;
+        }
 
         .box {
             background: #1e293b;
             padding: 15px;
             border-radius: 10px;
-            margin-bottom: 20px;
+            margin-bottom: 18px;
         }
 
-        select, button {
+        select, input, button {
             padding: 10px;
             border-radius: 6px;
             border: none;
             margin: 5px;
         }
 
+        select, input {
+            width: 260px;
+        }
+
         button {
-            background: #22c55e;
             color: white;
             cursor: pointer;
+            font-weight: bold;
+        }
+
+        .btn-blue { background: #2563eb; }
+        .btn-green { background: #16a34a; }
+        .btn-red { background: #dc2626; }
+        .btn-purple { background: #7c3aed; }
+        .btn-orange { background: #f59e0b; }
+        .btn-gray { background: #475569; }
+
+        .status-big {
+            font-size: 30px;
+            font-weight: bold;
+            color: #22c55e;
+        }
+
+        .warning {
+            background: #7f1d1d;
+            color: white;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 10px;
+            font-weight: bold;
+            display: none;
         }
 
         #map {
-            height: 500px;
-            margin-top: 20px;
+            height: 420px;
             border-radius: 10px;
+            margin-top: 12px;
+        }
+
+        table {
+            width: 100%;
+            background: white;
+            color: black;
+            border-collapse: collapse;
+            margin-top: 12px;
+        }
+
+        th, td {
+            border: 1px solid #999;
+            padding: 7px;
+            font-size: 13px;
+        }
+
+        th {
+            background: #e5e7eb;
+        }
+
+        pre {
+            background: black;
+            color: #22c55e;
+            padding: 12px;
+            border-radius: 8px;
+            white-space: pre-wrap;
+            max-height: 360px;
+            overflow: auto;
+        }
+
+        .log-grid {
+            background: white;
+            color: black;
+            padding: 12px;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+
+        .log-row {
+            display: flex;
+            align-items: center;
+            height: 42px;
+            border-bottom: 1px solid #ddd;
+            font-size: 13px;
+        }
+
+        .log-label {
+            width: 75px;
+            font-weight: bold;
+        }
+
+        .timeline {
+            position: relative;
+            width: 720px;
+            height: 30px;
+            background: repeating-linear-gradient(
+                to right,
+                #f3f4f6 0px,
+                #f3f4f6 29px,
+                #d1d5db 30px
+            );
+            border: 1px solid #9ca3af;
+        }
+
+        .segment {
+            position: absolute;
+            height: 22px;
+            top: 4px;
+            border-radius: 3px;
+        }
+
+        .off { background: #dc2626; }
+        .sb { background: #7c3aed; }
+        .driving { background: #16a34a; }
+        .on { background: #2563eb; }
+        .edit { background: #f59e0b; }
+
+        .hours {
+            display: flex;
+            margin-left: 75px;
+            width: 720px;
+            color: black;
+            font-size: 11px;
+        }
+
+        .hour {
+            width: 30px;
+            text-align: center;
+        }
+
+        .small {
+            font-size: 13px;
+            color: #cbd5e1;
         }
     </style>
 </head>
 
 <body>
 
-<h1>US Citylink ELD Driver App</h1>
+<h1>US Citylink Full Driver ELD App</h1>
 
 <div class="box">
-    <h3>Driver / Vehicle</h3>
+    <h2>Driver Login / Selection</h2>
 
-    <label>Driver:</label><br>
+    <p>Driver:</p>
     <select id="driver_id"></select>
 
-    <br><br>
-
-    <label>Vehicle:</label><br>
+    <p>Assigned / Selected Vehicle:</p>
     <select id="vehicle_id"></select>
+
+    <br>
+    <button class="btn-blue" onclick="refreshAll()">REFRESH ALL</button>
+    <button class="btn-green" onclick="driverLogin()">DRIVER LOGIN</button>
+    <button class="btn-red" onclick="driverLogout()">DRIVER LOGOUT</button>
+
+    <p id="assignment_info" class="small"></p>
 </div>
 
 <div class="box">
-    <h3>Current Driver Status</h3>
-    <p id="status">LIVE GPS CONNECTED</p>
+    <h2>Current Duty Status</h2>
+
+    <div id="current_status" class="status-big">Loading...</div>
+    <p id="status_details"></p>
+
+    <button class="btn-red" onclick="sendDutyStatus('OFF')">OFF DUTY</button>
+    <button class="btn-purple" onclick="sendDutyStatus('SB')">SLEEPER BERTH</button>
+    <button class="btn-blue" onclick="sendDutyStatus('ON')">ON DUTY</button>
+    <button class="btn-gray" onclick="refreshCurrentStatus()">REFRESH STATUS</button>
+
+    <p class="small">
+        DRIVING is created automatically when vehicle speed is above 5 mph. Driver should not manually create DRIVING.
+    </p>
 </div>
 
-<button onclick="loadFleet()">Refresh Map</button>
+<div class="box">
+    <h2>Vehicle / GPS Telemetry</h2>
 
-<h3>Fleet Map + Route History</h3>
-<div id="map"></div>
+    <p>Latitude:</p>
+    <input id="latitude" value="">
 
-<p id="map-status" style="color:red;"></p>
+    <p>Longitude:</p>
+    <input id="longitude" value="">
+
+    <p>Speed MPH:</p>
+    <input id="speed" value="0">
+
+    <p>Odometer:</p>
+    <input id="odometer" value="">
+
+    <p>Engine Hours:</p>
+    <input id="engine_hours" value="">
+
+    <br>
+    <button class="btn-green" onclick="loadSamsaraForSelectedTruck()">LOAD LIVE SAMSARA GPS</button>
+    <button class="btn-orange" onclick="sendTelemetry()">SEND TELEMETRY / AUTO DRIVING</button>
+
+    <p id="gps_info" class="small"></p>
+</div>
+
+<div class="box">
+    <h2>HOS Summary</h2>
+
+    <div id="hos_summary">Loading...</div>
+    <div id="hos_warning" class="warning"></div>
+
+    <button class="btn-blue" onclick="loadHOS()">REFRESH HOS</button>
+</div>
+
+<div class="box">
+    <h2>Driver Log Graph</h2>
+
+    <div class="log-grid">
+        <div class="hours" id="hours"></div>
+
+        <div class="log-row">
+            <div class="log-label">OFF</div>
+            <div class="timeline" id="row-off"></div>
+        </div>
+
+        <div class="log-row">
+            <div class="log-label">SB</div>
+            <div class="timeline" id="row-sb"></div>
+        </div>
+
+        <div class="log-row">
+            <div class="log-label">DR</div>
+            <div class="timeline" id="row-driving"></div>
+        </div>
+
+        <div class="log-row">
+            <div class="log-label">ON</div>
+            <div class="timeline" id="row-on"></div>
+        </div>
+    </div>
+
+    <button class="btn-blue" onclick="loadLogbook()">REFRESH LOG GRAPH</button>
+</div>
+
+<div class="box">
+    <h2>Events / Daily Log</h2>
+
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Time</th>
+                <th>Status</th>
+                <th>Vehicle</th>
+                <th>Origin</th>
+                <th>Speed</th>
+                <th>GPS</th>
+                <th>Edit</th>
+            </tr>
+        </thead>
+        <tbody id="events_body"></tbody>
+    </table>
+</div>
+
+<div class="box">
+    <h2>Edit Log</h2>
+
+    <p>Selected Event ID:</p>
+    <input id="edit_event_id" readonly>
+
+    <p>New Status:</p>
+    <select id="edit_new_status">
+        <option value="OFF">OFF DUTY</option>
+        <option value="SB">SLEEPER BERTH</option>
+        <option value="ON">ON DUTY</option>
+    </select>
+
+    <p>Reason / Annotation:</p>
+    <input id="edit_reason" placeholder="Required reason">
+
+    <br>
+    <button class="btn-orange" onclick="submitEdit()">SAVE EDIT</button>
+
+    <p class="small">DRIVING events cannot be edited. Original record stays saved.</p>
+
+    <h3>Edit History</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Original ID</th>
+                <th>New ID</th>
+                <th>Old</th>
+                <th>New</th>
+                <th>Reason</th>
+                <th>Edited At</th>
+            </tr>
+        </thead>
+        <tbody id="edits_body"></tbody>
+    </table>
+</div>
+
+<div class="box">
+    <h2>Certification</h2>
+
+    <p>Log Date:</p>
+    <input id="cert_date">
+
+    <p>Certification Note:</p>
+    <input id="cert_note" value="I certify that today's log is true and correct.">
+
+    <br>
+    <button class="btn-green" onclick="certifyLog()">CERTIFY LOG</button>
+
+    <h3>Certification History</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Driver</th>
+                <th>Log Date</th>
+                <th>Certified At</th>
+                <th>Note</th>
+            </tr>
+        </thead>
+        <tbody id="certs_body"></tbody>
+    </table>
+</div>
+
+<div class="box">
+    <h2>Map / Route Trail</h2>
+
+    <button class="btn-blue" onclick="loadMapTruck()">SHOW CURRENT TRUCK</button>
+    <button class="btn-orange" onclick="showRouteTrail()">SHOW ROUTE TRAIL</button>
+    <button class="btn-gray" onclick="clearRoute()">CLEAR ROUTE</button>
+
+    <div id="map"></div>
+    <p id="map_status" class="small"></p>
+</div>
+
+<div class="box">
+    <h2>DOT / Roadside Inspection</h2>
+
+    <button class="btn-orange" onclick="inspectionMode()">VIEW DOT OUTPUT</button>
+    <button class="btn-green" onclick="downloadDotFile()">DOWNLOAD DOT FILE</button>
+
+    <pre id="dot_output">DOT output will show here.</pre>
+</div>
+
+<div class="box">
+    <h2>System Result</h2>
+    <pre id="result">Ready.</pre>
+</div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
 const API = window.location.origin;
 
-var map = L.map("map").setView([36, -119], 6);
+let map = L.map("map").setView([39.5, -98.35], 5);
 
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: "© OpenStreetMap"
 }).addTo(map);
 
-let markers = [];
+let truckMarker = null;
+let routeLine = null;
+let routeMarkers = [];
 
-async function loadDriverDropdown() {
-    try {
-        const response = await fetch(`${API}/api/admin/drivers`);
-        const drivers = await response.json();
+function driver() {
+    return document.getElementById("driver_id").value;
+}
 
-        const select = document.getElementById("driver_id");
-        select.innerHTML = "";
+function vehicle() {
+    return document.getElementById("vehicle_id").value;
+}
 
-        if (!Array.isArray(drivers) || drivers.length === 0) {
-            select.innerHTML = `<option>No drivers found</option>`;
-            return;
-        }
+function todayDate() {
+    return new Date().toISOString().slice(0, 10);
+}
 
-        drivers.forEach(d => {
-            const option = document.createElement("option");
-            option.value = d.driver_id;
-            option.textContent = `${d.name} (${d.driver_id})`;
-            select.appendChild(option);
-        });
-
-    } catch (error) {
-        console.log("Driver dropdown error:", error);
+function setResult(data) {
+    if (typeof data === "string") {
+        document.getElementById("result").textContent = data;
+    } else {
+        document.getElementById("result").textContent = JSON.stringify(data, null, 2);
     }
 }
 
-async function loadVehicleDropdown() {
-    try {
-        const response = await fetch(`${API}/api/samsara/gps`);
-        const vehicles = await response.json();
+function buildHours() {
+    let html = "";
+    for (let i = 0; i <= 24; i++) {
+        html += `<div class="hour">${i}</div>`;
+    }
+    document.getElementById("hours").innerHTML = html;
+}
 
-        const select = document.getElementById("vehicle_id");
-        select.innerHTML = "";
+function clearLogRows() {
+    document.getElementById("row-off").innerHTML = "";
+    document.getElementById("row-sb").innerHTML = "";
+    document.getElementById("row-driving").innerHTML = "";
+    document.getElementById("row-on").innerHTML = "";
+}
 
-        if (!Array.isArray(vehicles) || vehicles.length === 0) {
-            select.innerHTML = `<option>No vehicles found</option>`;
-            return;
+function statusToRow(status) {
+    if (status === "OFF") return "row-off";
+    if (status === "SB") return "row-sb";
+    if (status === "DRIVING") return "row-driving";
+    if (status === "ON") return "row-on";
+    return "row-off";
+}
+
+function statusToClass(status, origin) {
+    if (origin === "EDIT") return "edit";
+    if (status === "OFF") return "off";
+    if (status === "SB") return "sb";
+    if (status === "DRIVING") return "driving";
+    if (status === "ON") return "on";
+    return "off";
+}
+
+function minutesFromMidnight(dateString) {
+    const d = new Date(dateString);
+    return d.getHours() * 60 + d.getMinutes();
+}
+
+async function loadDrivers() {
+    const res = await fetch(`${API}/api/admin/drivers`);
+    const data = await res.json();
+
+    const select = document.getElementById("driver_id");
+    select.innerHTML = "";
+
+    if (!Array.isArray(data) || data.length === 0) {
+        select.innerHTML = "<option value=''>No drivers found</option>";
+        return;
+    }
+
+    data.forEach(d => {
+        const option = document.createElement("option");
+        option.value = d.driver_id;
+        option.textContent = `${d.name} (${d.driver_id})`;
+        select.appendChild(option);
+    });
+}
+
+async function loadVehicles() {
+    const res = await fetch(`${API}/api/samsara/gps`);
+    const data = await res.json();
+
+    const select = document.getElementById("vehicle_id");
+    const oldValue = select.value;
+    select.innerHTML = "";
+
+    if (!Array.isArray(data) || data.length === 0) {
+        select.innerHTML = "<option value=''>No vehicles found</option>";
+        return;
+    }
+
+    const latest = {};
+
+    data.forEach(v => {
+        if (!v.vehicle_id) return;
+
+        if (!latest[v.vehicle_id]) {
+            latest[v.vehicle_id] = v;
+        } else {
+            const oldTime = new Date(latest[v.vehicle_id].time || 0);
+            const newTime = new Date(v.time || 0);
+
+            if (newTime > oldTime) {
+                latest[v.vehicle_id] = v;
+            }
         }
+    });
 
-        const seen = {};
+    Object.values(latest).forEach(v => {
+        const option = document.createElement("option");
+        option.value = v.vehicle_id;
+        option.textContent = v.vehicle_id;
+        option.dataset.sid = v.samsara_vehicle_id || "";
+        select.appendChild(option);
+    });
 
-        vehicles.forEach(v => {
-            if (!v.vehicle_id) return;
-            if (seen[v.vehicle_id]) return;
-
-            seen[v.vehicle_id] = true;
-
-            const option = document.createElement("option");
-            option.value = v.vehicle_id;
-            option.textContent = v.vehicle_id;
-            select.appendChild(option);
-        });
-
-    } catch (error) {
-        console.log("Vehicle dropdown error:", error);
+    if (oldValue) {
+        select.value = oldValue;
     }
 }
 
-async function loadFleet() {
-    try {
-        const res = await fetch(`${API}/api/samsara/gps`);
-        const data = await res.json();
+async function loadAssignmentInfo() {
+    const res = await fetch(`${API}/api/assignment/active`);
+    const data = await res.json();
 
-        markers.forEach(m => map.removeLayer(m));
-        markers = [];
+    if (!Array.isArray(data)) return;
 
-        if (!Array.isArray(data)) {
-            document.getElementById("map-status").innerText = "API error";
-            return;
-        }
+    const match = data.find(a => a.driver_id === driver());
 
-        data.forEach(truck => {
-            if (!truck.latitude || !truck.longitude) return;
-
-            const marker = L.marker([truck.latitude, truck.longitude])
-                .addTo(map)
-                .bindPopup(
-                    "<b>" + truck.vehicle_id + "</b><br>" +
-                    "Speed: " + truck.speed + " mph<br>" +
-                    "Time: " + truck.time
-                );
-
-            markers.push(marker);
-        });
-
-        document.getElementById("map-status").innerText = "";
-
-    } catch (err) {
-        console.error(err);
-        document.getElementById("map-status").innerText = "Map error";
+    if (match) {
+        document.getElementById("assignment_info").textContent =
+            `Assigned vehicle: ${match.vehicle_id}`;
+        document.getElementById("vehicle_id").value = match.vehicle_id;
+    } else {
+        document.getElementById("assignment_info").textContent =
+            "No assigned vehicle found for selected driver.";
     }
 }
 
-window.onload = async function() {
-    await loadDriverDropdown();
-    await loadVehicleDropdown();
-    await loadFleet();
-};
+async function driverLogin() {
+    const res = await fetch(`${API}/api/driver/login?driver_id=${encodeURIComponent(driver())}`, {
+        method: "POST"
+    });
+    const data = await res.json();
+    setResult(data);
+}
 
-setInterval(loadFleet, 10000);
+async function driverLogout() {
+    const res = await fetch(`${API}/api/driver/logout?driver_id=${encodeURIComponent(driver())}`, {
+        method: "POST"
+    });
+    const data = await res.json();
+    setResult(data);
+}
+
+async function sendDutyStatus(status) {
+    const lat = document.getElementById("latitude").value;
+    const lon = document.getElementById("longitude").value;
+    const odo = document.getElementById("odometer").value;
+    const eng = document.getElementById("engine_hours").value;
+
+    const url =
+        `${API}/api/eld/event?driver_id=${encodeURIComponent(driver())}` +
+        `&vehicle_id=${encodeURIComponent(vehicle())}` +
+        `&duty_status=${encodeURIComponent(status)}` +
+        `&latitude=${encodeURIComponent(lat)}` +
+        `&longitude=${encodeURIComponent(lon)}` +
+        `&odometer=${encodeURIComponent(odo)}` +
+        `&engine_hours=${encodeURIComponent(eng)}`;
+
+    const res = await fetch(url, { method: "POST" });
+    const data = await res.json();
+
+    setResult(data);
+    await refreshAll();
+}
+
+async function sendTelemetry() {
+    const speed = document.getElementById("speed").value;
+    const lat = document.getElementById("latitude").value;
+    const lon = document.getElementById("longitude").value;
+    const odo = document.getElementById("odometer").value;
+    const eng = document.getElementById("engine_hours").value;
+
+    const url =
+        `${API}/api/vehicle/telemetry?driver_id=${encodeURIComponent(driver())}` +
+        `&vehicle_id=${encodeURIComponent(vehicle())}` +
+        `&speed=${encodeURIComponent(speed)}` +
+        `&latitude=${encodeURIComponent(lat)}` +
+        `&longitude=${encodeURIComponent(lon)}` +
+        `&odometer=${encodeURIComponent(odo)}` +
+        `&engine_hours=${encodeURIComponent(eng)}`;
+
+    const res = await fetch(url, { method: "POST" });
+    const data = await res.json();
+
+    setResult(data);
+    await refreshAll();
+}
+
+async function loadSamsaraForSelectedTruck() {
+    const res = await fetch(`${API}/api/samsara/gps`);
+    const data = await res.json();
+
+    if (!Array.isArray(data)) {
+        setResult(data);
+        return;
+    }
+
+    const selected = data.find(t => t.vehicle_id === vehicle());
+
+    if (!selected) {
+        document.getElementById("gps_info").textContent =
+            "No live GPS found for selected vehicle.";
+        return;
+    }
+
+    document.getElementById("latitude").value = selected.latitude || "";
+    document.getElementById("longitude").value = selected.longitude || "";
+    document.getElementById("speed").value = selected.speed || 0;
+
+    document.getElementById("gps_info").textContent =
+        `Loaded Samsara GPS for ${selected.vehicle_id} at ${selected.time}`;
+
+    loadMapTruck();
+}
+
+async function refreshCurrentStatus() {
+    if (!driver()) return;
+
+    const res = await fetch(`${API}/api/driver/current-status?driver_id=${encodeURIComponent(driver())}`);
+    const data = await res.json();
+
+    document.getElementById("current_status").textContent =
+        `${data.current_status || "NO STATUS"} (${data.event_origin || "N/A"})`;
+
+    document.getElementById("status_details").innerHTML =
+        `Vehicle: ${data.vehicle_id || ""}<br>
+         Time: ${data.event_time || ""}<br>
+         Speed: ${data.speed || 0}<br>
+         GPS: ${data.latitude || ""}, ${data.longitude || ""}`;
+}
+
+async function loadHOS() {
+    if (!driver()) return;
+
+    const res = await fetch(`${API}/api/hos/summary?driver_id=${encodeURIComponent(driver())}`);
+    const data = await res.json();
+
+    document.getElementById("hos_summary").innerHTML =
+        `Driving Used: ${data.driving_hours} hrs / 11 hrs<br>
+         Driving Left: ${data.driving_remaining} hrs<br><br>
+         Shift Used: ${data.shift_hours} hrs / 14 hrs<br>
+         Shift Left: ${data.shift_remaining} hrs<br><br>
+         Status: ${data.violation ? "VIOLATION" : "OK"}`;
+
+    const warn = document.getElementById("hos_warning");
+
+    if (data.violation) {
+        warn.style.display = "block";
+        warn.textContent = "⚠️ HOS VIOLATION: " + data.violation_message;
+    } else {
+        warn.style.display = "none";
+        warn.textContent = "";
+    }
+}
+
+async function loadLogbook() {
+    if (!driver()) return;
+
+    clearLogRows();
+
+    const res = await fetch(`${API}/api/eld/events?driver_id=${encodeURIComponent(driver())}`);
+    const events = await res.json();
+
+    const body = document.getElementById("events_body");
+    body.innerHTML = "";
+
+    if (!Array.isArray(events)) return;
+
+    events.forEach(e => {
+        const time = new Date(e.event_time).toLocaleString();
+
+        let editButton = "";
+
+        if (e.duty_status === "DRIVING") {
+            editButton = "NO EDIT";
+        } else {
+            editButton = `<button class="btn-orange" onclick="selectEdit(${e.id}, '${e.duty_status}')">EDIT</button>`;
+        }
+
+        body.innerHTML += `
+            <tr>
+                <td>${e.id}</td>
+                <td>${time}</td>
+                <td>${e.duty_status}</td>
+                <td>${e.vehicle_id}</td>
+                <td>${e.event_origin || ""}</td>
+                <td>${e.speed || 0}</td>
+                <td>${e.latitude || ""}, ${e.longitude || ""}</td>
+                <td>${editButton}</td>
+            </tr>
+        `;
+    });
+
+    for (let i = 0; i < events.length; i++) {
+        const current = events[i];
+        const next = events[i + 1];
+
+        const startMin = minutesFromMidnight(current.event_time);
+        let endMin;
+
+        if (next) {
+            endMin = minutesFromMidnight(next.event_time);
+        } else {
+            const now = new Date();
+            endMin = now.getHours() * 60 + now.getMinutes();
+        }
+
+        if (endMin < startMin) {
+            endMin = 1440;
+        }
+
+        const leftPercent = (startMin / 1440) * 100;
+        const widthPercent = ((endMin - startMin) / 1440) * 100;
+
+        const rowId = statusToRow(current.duty_status);
+        const className = statusToClass(current.duty_status, current.event_origin);
+
+        const segment = document.createElement("div");
+        segment.className = `segment ${className}`;
+        segment.style.left = leftPercent + "%";
+        segment.style.width = Math.max(widthPercent, 0.5) + "%";
+        segment.title = `${current.duty_status} ${current.event_time}`;
+
+        document.getElementById(rowId).appendChild(segment);
+    }
+}
+
+function selectEdit(id, status) {
+    document.getElementById("edit_event_id").value = id;
+    document.getElementById("edit_new_status").value = status;
+    document.getElementById("edit_reason").focus();
+}
+
+async function submitEdit() {
+    const eventId = document.getElementById("edit_event_id").value;
+    const newStatus = document.getElementById("edit_new_status").value;
+    const reason = document.getElementById("edit_reason").value;
+
+    if (!eventId) {
+        alert("Select an event first.");
+        return;
+    }
+
+    if (!reason.trim()) {
+        alert("Edit reason is required.");
+        return;
+    }
+
+    const url =
+        `${API}/api/eld/edit-event?event_id=${encodeURIComponent(eventId)}` +
+        `&new_status=${encodeURIComponent(newStatus)}` +
+        `&reason=${encodeURIComponent(reason)}`;
+
+    const res = await fetch(url, { method: "POST" });
+    const data = await res.json();
+
+    setResult(data);
+
+    document.getElementById("edit_event_id").value = "";
+    document.getElementById("edit_reason").value = "";
+
+    await refreshAll();
+}
+
+async function loadEditHistory() {
+    if (!driver()) return;
+
+    const res = await fetch(`${API}/api/eld/edits?driver_id=${encodeURIComponent(driver())}`);
+    const data = await res.json();
+
+    const body = document.getElementById("edits_body");
+    body.innerHTML = "";
+
+    if (!Array.isArray(data)) return;
+
+    data.forEach(e => {
+        body.innerHTML += `
+            <tr>
+                <td>${e.original_event_id}</td>
+                <td>${e.new_event_id}</td>
+                <td>${e.old_status}</td>
+                <td>${e.new_status}</td>
+                <td>${e.reason}</td>
+                <td>${new Date(e.edited_at).toLocaleString()}</td>
+            </tr>
+        `;
+    });
+}
+
+async function certifyLog() {
+    const logDate = document.getElementById("cert_date").value;
+    const note = document.getElementById("cert_note").value;
+
+    const url =
+        `${API}/api/eld/certify?driver_id=${encodeURIComponent(driver())}` +
+        `&log_date=${encodeURIComponent(logDate)}` +
+        `&note=${encodeURIComponent(note)}`;
+
+    const res = await fetch(url, { method: "POST" });
+    const data = await res.json();
+
+    setResult(data);
+    await loadCertifications();
+}
+
+async function loadCertifications() {
+    if (!driver()) return;
+
+    const res = await fetch(`${API}/api/eld/certifications?driver_id=${encodeURIComponent(driver())}`);
+    const data = await res.json();
+
+    const body = document.getElementById("certs_body");
+    body.innerHTML = "";
+
+    if (!Array.isArray(data)) return;
+
+    data.forEach(c => {
+        body.innerHTML += `
+            <tr>
+                <td>${c.id}</td>
+                <td>${c.driver_id}</td>
+                <td>${c.log_date}</td>
+                <td>${new Date(c.certified_at).toLocaleString()}</td>
+                <td>${c.note}</td>
+            </tr>
+        `;
+    });
+}
+
+async function loadMapTruck() {
+    const res = await fetch(`${API}/api/samsara/gps`);
+    const data = await res.json();
+
+    if (!Array.isArray(data)) return;
+
+    const selected = data.find(t => t.vehicle_id === vehicle());
+
+    if (!selected || !selected.latitude || !selected.longitude) {
+        document.getElementById("map_status").textContent = "No GPS for selected truck.";
+        return;
+    }
+
+    const lat = parseFloat(selected.latitude);
+    const lon = parseFloat(selected.longitude);
+
+    if (truckMarker) {
+        map.removeLayer(truckMarker);
+    }
+
+    truckMarker = L.marker([lat, lon]).addTo(map);
+    truckMarker.bindPopup(
+        `<b>Truck:</b> ${selected.vehicle_id}<br>
+         <b>Speed:</b> ${selected.speed || 0} mph<br>
+         <b>Time:</b> ${selected.time || ""}`
+    );
+
+    map.setView([lat, lon], 10);
+
+    document.getElementById("map_status").textContent =
+        `Showing ${selected.vehicle_id}`;
+}
+
+async function showRouteTrail() {
+    const res = await fetch(`${API}/api/gps/route?vehicle_id=${encodeURIComponent(vehicle())}&limit=500`);
+    const data = await res.json();
+
+    if (!Array.isArray(data)) {
+        alert("Route API error.");
+        return;
+    }
+
+    clearRoute();
+
+    const points = [];
+
+    data.forEach(p => {
+        const lat = parseFloat(p.latitude);
+        const lon = parseFloat(p.longitude);
+
+        if (isNaN(lat) || isNaN(lon)) return;
+
+        points.push([lat, lon]);
+
+        const marker = L.circleMarker([lat, lon], { radius: 4 }).addTo(map);
+        marker.bindPopup(
+            `<b>Truck:</b> ${p.vehicle_id}<br>
+             <b>Speed:</b> ${p.speed || 0}<br>
+             <b>Time:</b> ${p.time || ""}`
+        );
+
+        routeMarkers.push(marker);
+    });
+
+    if (points.length === 0) {
+        alert("No route saved yet. Leave dispatcher open to collect GPS trail.");
+        return;
+    }
+
+    routeLine = L.polyline(points).addTo(map);
+    map.fitBounds(routeLine.getBounds());
+}
+
+function clearRoute() {
+    routeMarkers.forEach(m => map.removeLayer(m));
+    routeMarkers = [];
+
+    if (routeLine) {
+        map.removeLayer(routeLine);
+        routeLine = null;
+    }
+}
+
+async function inspectionMode() {
+    const res = await fetch(`${API}/api/eld/output-file`);
+    const text = await res.text();
+
+    document.getElementById("dot_output").textContent = text;
+}
+
+function downloadDotFile() {
+    window.open(`${API}/api/eld/download`, "_blank");
+}
+
+async function refreshAll() {
+    await loadAssignmentInfo();
+    await refreshCurrentStatus();
+    await loadHOS();
+    await loadLogbook();
+    await loadEditHistory();
+    await loadCertifications();
+    await loadSamsaraForSelectedTruck();
+}
+
+async function startPage() {
+    document.getElementById("cert_date").value = todayDate();
+
+    buildHours();
+
+    await loadDrivers();
+    await loadVehicles();
+    await loadAssignmentInfo();
+    await refreshAll();
+}
+
+document.getElementById("driver_id").addEventListener("change", refreshAll);
+document.getElementById("vehicle_id").addEventListener("change", loadSamsaraForSelectedTruck);
+
+startPage();
+
+setInterval(loadSamsaraForSelectedTruck, 15000);
+setInterval(refreshCurrentStatus, 15000);
+setInterval(loadHOS, 30000);
 </script>
 
 </body>
